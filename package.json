@@ -5,6 +5,8 @@
   "description": "Static site generated from Notion export",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.39.1"
   }
 }
-

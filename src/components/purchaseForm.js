@@ -163,6 +163,66 @@ function setupFormEvents() {
       }
     });
   }
+
+  // Automatic metadata fetching for links
+  const linkInput = $('input[name="购买链接"]');
+  if (linkInput) {
+    const handleUrlInput = async (url) => {
+      if (!url || !url.startsWith('http')) return;
+      
+      const nameInput = $('input[name="名称"]');
+      const priceInput = $('input[name="价格"]');
+      const brandInput = $('input[name="品牌"]');
+      const imgDataInput = $('#img-data');
+
+      // Show some loading indicator if possible
+      linkInput.style.borderColor = 'var(--brand)';
+      linkInput.classList.add('loading-pulse');
+
+      try {
+        console.log('Fetching metadata for:', url);
+        const response = await fetch('/api/fetch-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetUrl: url })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          if (data.title && (!nameInput.value || nameInput.value.length < 5)) nameInput.value = data.title;
+          if (data.price && !priceInput.value) priceInput.value = data.price;
+          // Heuristic for brand (extract from title if common brands found)
+          if (!brandInput.value && data.title) {
+            const brands = ['优衣库', 'UNIQLO', 'ZARA', 'H&M', '耐克', 'NIKE', '阿迪达斯', 'ADIDAS', '李宁', '安踏'];
+            const foundBrand = brands.find(b => data.title.toUpperCase().includes(b));
+            if (foundBrand) brandInput.value = foundBrand;
+          }
+
+          if (data.image && !uploadedImageData) {
+            uploadedImageData = data.image;
+            if (previewImg) previewImg.src = data.image;
+            if (imgDataInput) imgDataInput.value = data.image;
+            if (placeholder) placeholder.style.display = 'none';
+            if (preview) preview.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch metadata:', err);
+      } finally {
+        linkInput.style.borderColor = '';
+        linkInput.classList.remove('loading-pulse');
+      }
+    };
+
+    linkInput.addEventListener('paste', (e) => {
+      const pasted = e.clipboardData.getData('text');
+      handleUrlInput(pasted);
+    });
+
+    linkInput.addEventListener('change', (e) => {
+      handleUrlInput(e.target.value);
+    });
+  }
   
   document.addEventListener('paste', handlePaste);
   

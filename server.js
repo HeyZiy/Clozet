@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const puppeteer = require('puppeteer');
 
 const port = process.env.PORT || 5173;
 const root = __dirname;
@@ -41,80 +42,133 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
+      let browser;
       try {
         const { targetUrl } = JSON.parse(body);
         if (!targetUrl) {
           res.writeHead(400); res.end('URL required'); return;
         }
 
-        const response = await fetch(targetUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Referer': 'https://www.taobao.com/'
-          },
-          redirect: 'follow'
+        console.log(`[V2.1] Scraping: ${targetUrl}`);
+        console.log('Launching browser...');
+        
+        // Find system browser on Windows as fallback
+        const executablePaths = [
+          'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+          process.env.CHROME_PATH 
+        ].filter(Boolean);
+        
+        let executablePath = executablePaths.find(p => fs.existsSync(p));
+
+        browser = await puppeteer.launch({
+          headless: true,
+          executablePath: executablePath || undefined,
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled' // Helps bypass some bot detection
+          ]
+        });
+        console.log(`Browser launched (Executable: ${executablePath || 'default'}). Creating page...`);
+        const page = await browser.newPage();
+        
+        // Set extra headers to look more like a real user
+        await page.setExtraHTTPHeaders({
+          'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'
         });
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch: ${response.statusText}`);
-        }
-
-        const html = await response.text();
+        // Emulate iPhone
+        await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+        await page.setViewport({ width: 390, height: 844 });
         
-        // Check if we hit a login page or redirect page
-        if (html.includes('login.taobao.com') || html.includes('login.m.taobao.com') || html.includes('验证码') || html.includes('滑块验证')) {
-          // If it's a Taobao short link, sometimes we can extract a bit from the page title or URL even if blocked
-          const urlObj = new URL(response.url);
-          const titleFromUrl = urlObj.searchParams.get('id') || ''; 
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            title: `淘宝商品 (需手动填写) ${titleFromUrl}`, 
-            image: '', 
-            price: '',
-            success: true,
-            warning: '由于淘宝安全限制，自动抓取受到限制，请手动补充信息'
-          }));
-          return;
+        // Speed optimization: Block images, fonts, and CSS
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
+
+        console.log(`Navigating to ${targetUrl}...`);
+        try {
+          // Use domcontentloaded for faster returns, we don't need all resources
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        } catch (navErr) {
+          console.log(`Navigation hit a timeout/error (${navErr.message}), but continuing to extract partial data if possible...`);
         }
-
-        // Simple extraction logic
-        const getMeta = (prop) => {
-          const match = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i')) ||
-                        html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`, 'i'));
-          return match ? match[1] : null;
-        };
-
-        let title = getMeta('og:title') || html.match(/<title>([^<]+)<\/title>/i)?.[1] || '';
-        let image = getMeta('og:image') || getMeta('twitter:image') || '';
         
-        // Try to find image in <img> tags if og:image fails
-        if (!image) {
-          const imgMatch = html.match(/<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpg|jpeg|png|webp))["']/i);
-          if (imgMatch) image = imgMatch[1];
+        // If it's a Taobao link, wait specifically for some content or a bit longer
+        const isTaobao = targetUrl.includes('taobao.com') || targetUrl.includes('tmall.com') || targetUrl.includes('tb.cn');
+        if (isTaobao) {
+          console.log('Detected Taobao/Tmall/tb.cn, waiting for dynamic content...');
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Taobao needs more time
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
 
-        // Try to find price (very basic heuristic for common patterns)
-        let price = '';
-        const priceMatch = html.match(/(?:price|售价|价格|¥|￥)\s*[:：]?\s*(\d+(?:\.\d{2})?)/i);
-        if (priceMatch) price = priceMatch[1];
+        const data = await page.evaluate(() => {
+          const getMeta = (prop) => {
+            const el = document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`);
+            return el ? el.getAttribute('content') : null;
+          };
 
-        // Clean up title (remove common suffixes)
-        title = title.replace(/-淘宝网|-tmall\.com天猫| - 详情/g, '').trim();
+          let title = getMeta('og:title') || document.title || '';
+          let image = getMeta('og:image') || getMeta('twitter:image') || '';
+          let price = '';
+
+          // Check for Taobao "World" placeholder
+          const isPlaceholder = title.includes('天猫淘宝海外') || title.includes('Login') || title.includes('验证码');
+
+          // Platform-specific cleanups
+          if (location.host.includes('taobao.com') || location.host.includes('tmall.com')) {
+            // Price detection in mobile Taobao
+            const priceEl = document.querySelector('.price, .item-price, .promo-price, .ui-cost, [class*="price-text"], .main-price');
+            if (priceEl) price = priceEl.innerText.replace(/[^\d.]/g, '');
+            
+            // Image detection
+            if (!image || image.includes('placeholder')) {
+              const mainImg = document.querySelector('.main-img img, .item-detail-img img, #J_ImgBooth');
+              if (mainImg) image = mainImg.src;
+            }
+          } else if (location.host.includes('jd.com')) {
+            const priceEl = document.querySelector('.jd-price, .price-display, .p-price, .mod_price');
+            if (priceEl) price = priceEl.innerText.replace(/[^\d.]/g, '');
+          }
+
+          // Fallback price detection (searching for ¥ sign)
+          if (!price) {
+            const priceTags = Array.from(document.querySelectorAll('span, div, b, strong')).filter(el => el.innerText.includes('¥') || el.innerText.includes('￥'));
+            for (const tag of priceTags) {
+              const match = tag.innerText.match(/[¥￥]\s?(\d+(?:\.\d{2})?)/);
+              if (match) { price = match[1]; break; }
+            }
+          }
+
+          // Generic Title Clean
+          title = title.replace(/-淘宝网|-tmall\.com天猫| - 详情|-京东|淘宝海外/g, '').trim();
+
+          return { title, image, price, isPlaceholder };
+        });
+
+        console.log('Extraction results:', data);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
-          title: title, 
-          image: image, 
-          price: price,
-          success: true 
+          ...data,
+          success: true,
+          warning: data.isPlaceholder ? '注意：可能触发了机器人验证或重定向，信息可能不完整' : undefined
         }));
       } catch (e) {
+        console.error('Scrape error:', e);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: e.message }));
+      } finally {
+        if (browser) await browser.close();
       }
     });
     return;

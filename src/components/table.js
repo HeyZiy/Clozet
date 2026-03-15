@@ -193,6 +193,43 @@ export function setupTableEvents(container, fileType, rows) {
     if (batchActions) batchActions.classList.toggle('active', selected > 0);
   }
   
+  // Handle row actions (Edit, Move, Delete)
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    
+    const action = btn.dataset.action;
+    const rowIdx = btn.closest('tr').dataset.rowIdx;
+    const rowData = rows[rowIdx];
+    
+    console.log(`Action: ${action} on row ${rowIdx}`, rowData);
+    
+    if (action === 'edit') {
+      // Import and show appropriate form
+      if (fileType === 'purchases') {
+        const { showPurchaseForm } = await import('./purchaseForm.js');
+        showPurchaseForm((updatedData) => {
+          console.log('Saving updated purchase:', updatedData);
+          // Logic to save edit would go here - for now just alert
+          alert('编辑功能正在对接保存接口...');
+        }, rowData); // Pass rowData to populate form
+      } else {
+        const { showModal } = await import('./modal.js');
+        showModal('编辑项目', rowData, (updatedData) => {
+          console.log('Saving updated project item:', updatedData);
+          alert('编辑功能正在对接保存接口...');
+        });
+      }
+    } else if (action === 'move') {
+      const target = btn.dataset.target;
+      alert(`移动功能 (从 ${fileType} 到 ${target}) 开发中...`);
+    } else if (action === 'delete') {
+      if (confirm('确定要删除这项吗？')) {
+        alert('删除功能开发中...');
+      }
+    }
+  });
+
   const searchInput = $('[data-table-search]', container);
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
