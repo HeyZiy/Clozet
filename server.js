@@ -2,30 +2,10 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
-const sqlite3 = require('sqlite3').verbose();
+const pool = require('./db');
 
 const port = process.env.PORT || 5173;
 const root = __dirname;
-const dbPath = path.join(root, 'data', 'database.sqlite');
-
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database', err.message);
-  } else {
-    console.log(`Connected to the SQLite database at ${dbPath}`);
-  }
-});
-
-// Helper function to escape CSV fields
-function escapeCsvField(field) {
-  if (field === null || field === undefined) return '';
-  const str = String(field);
-  // If field contains comma, quote, or newline, wrap in quotes and escape inner quotes
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return '"' + str.replace(/"/g, '""') + '"';
-  }
-  return str;
-}
 
 const mime = {
   '.html':'text/html; charset=utf-8',
@@ -62,39 +42,27 @@ const server = http.createServer((req, res) => {
         console.log(`[V2.1] Scraping: ${targetUrl}`);
         console.log('Launching browser...');
         
-        // Find system browser on Windows as fallback
-        const executablePaths = [
-          'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-          process.env.CHROME_PATH 
-        ].filter(Boolean);
-        
-        let executablePath = executablePaths.find(p => fs.existsSync(p));
-
         browser = await puppeteer.launch({
           headless: true,
-          executablePath: executablePath || undefined,
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox', 
             '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled' // Helps bypass some bot detection
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--disable-web-security'
           ]
         });
-        console.log(`Browser launched (Executable: ${executablePath || 'default'}). Creating page...`);
+        console.log('Browser launched. Creating page...');
         const page = await browser.newPage();
         
-        // Set extra headers to look more like a real user
         await page.setExtraHTTPHeaders({
           'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'
         });
 
-        // Emulate iPhone
         await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
         await page.setViewport({ width: 390, height: 844 });
         
-        // Speed optimization: Block images, fonts, and CSS
         await page.setRequestInterception(true);
         page.on('request', (req) => {
           if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
@@ -106,17 +74,15 @@ const server = http.createServer((req, res) => {
 
         console.log(`Navigating to ${targetUrl}...`);
         try {
-          // Use domcontentloaded for faster returns, we don't need all resources
           await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         } catch (navErr) {
           console.log(`Navigation hit a timeout/error (${navErr.message}), but continuing to extract partial data if possible...`);
         }
         
-        // If it's a Taobao link, wait specifically for some content or a bit longer
         const isTaobao = targetUrl.includes('taobao.com') || targetUrl.includes('tmall.com') || targetUrl.includes('tb.cn');
         if (isTaobao) {
           console.log('Detected Taobao/Tmall/tb.cn, waiting for dynamic content...');
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Taobao needs more time
+          await new Promise(resolve => setTimeout(resolve, 3000));
         } else {
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
@@ -131,16 +97,12 @@ const server = http.createServer((req, res) => {
           let image = getMeta('og:image') || getMeta('twitter:image') || '';
           let price = '';
 
-          // Check for Taobao "World" placeholder
           const isPlaceholder = title.includes('天猫淘宝海外') || title.includes('Login') || title.includes('验证码');
 
-          // Platform-specific cleanups
           if (location.host.includes('taobao.com') || location.host.includes('tmall.com')) {
-            // Price detection in mobile Taobao
             const priceEl = document.querySelector('.price, .item-price, .promo-price, .ui-cost, [class*="price-text"], .main-price');
             if (priceEl) price = priceEl.innerText.replace(/[^\d.]/g, '');
             
-            // Image detection
             if (!image || image.includes('placeholder')) {
               const mainImg = document.querySelector('.main-img img, .item-detail-img img, #J_ImgBooth');
               if (mainImg) image = mainImg.src;
@@ -150,7 +112,6 @@ const server = http.createServer((req, res) => {
             if (priceEl) price = priceEl.innerText.replace(/[^\d.]/g, '');
           }
 
-          // Fallback price detection (searching for ¥ sign)
           if (!price) {
             const priceTags = Array.from(document.querySelectorAll('span, div, b, strong')).filter(el => el.innerText.includes('¥') || el.innerText.includes('￥'));
             for (const tag of priceTags) {
@@ -159,7 +120,6 @@ const server = http.createServer((req, res) => {
             }
           }
 
-          // Generic Title Clean
           title = title.replace(/-淘宝网|-tmall\.com天猫| - 详情|-京东|淘宝海外/g, '').trim();
 
           return { title, image, price, isPlaceholder };
@@ -184,16 +144,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // === SQLite API Endpoints ===
+  // === PostgreSQL API Endpoints ===
 
   // 1. Get Items
   if (req.method === 'GET' && urlPath === '/api/items') {
-    db.all(`SELECT * FROM items ORDER BY id DESC`, [], (err, rows) => {
+    pool.query('SELECT * FROM items ORDER BY id DESC', (err, result) => {
       if (err) {
         res.writeHead(500); res.end(err.message); return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(rows));
+      res.end(JSON.stringify(result.rows));
     });
     return;
   }
@@ -207,14 +167,16 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         const { image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location } = data;
         
-        db.run(`
-          INSERT INTO items (image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location || 'inventory'], function(err) {
-          if (err) { res.writeHead(500); res.end(err.message); return; }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, id: this.lastID }));
-        });
+        pool.query(
+          `INSERT INTO items (image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+          [image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location || 'inventory'],
+          (err, result) => {
+            if (err) { res.writeHead(500); res.end(err.message); return; }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, id: result.rows[0].id }));
+          }
+        );
       } catch (e) {
         res.writeHead(400); res.end('Invalid request');
       }
@@ -222,7 +184,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 3. Update Item (including color, location, etc)
+  // 3. Update Item
   if (req.method === 'PUT' && urlPath.startsWith('/api/items/')) {
     const id = urlPath.split('/').pop();
     let body = '';
@@ -230,13 +192,15 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const data = JSON.parse(body);
-        // Build dynamic update query based on provided fields
         const updates = [];
         const values = [];
+        let paramIndex = 1;
+        
         for (const [key, value] of Object.entries(data)) {
           if (key !== 'id') {
-            updates.push(`${key} = ?`);
+            updates.push(`${key} = $${paramIndex}`);
             values.push(value);
+            paramIndex++;
           }
         }
         
@@ -246,11 +210,15 @@ const server = http.createServer((req, res) => {
         
         values.push(id);
         
-        db.run(`UPDATE items SET ${updates.join(', ')} WHERE id = ?`, values, function(err) {
-          if (err) { res.writeHead(500); res.end(err.message); return; }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, changes: this.changes }));
-        });
+        pool.query(
+          `UPDATE items SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+          values,
+          (err, result) => {
+            if (err) { res.writeHead(500); res.end(err.message); return; }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, changes: result.rowCount }));
+          }
+        );
       } catch (e) {
         res.writeHead(400); res.end('Invalid request');
       }
@@ -261,22 +229,22 @@ const server = http.createServer((req, res) => {
   // 4. Delete Item
   if (req.method === 'DELETE' && urlPath.startsWith('/api/items/')) {
     const id = urlPath.split('/').pop();
-    db.run(`DELETE FROM items WHERE id = ?`, id, function(err) {
+    pool.query('DELETE FROM items WHERE id = $1', [id], (err, result) => {
       if (err) { res.writeHead(500); res.end(err.message); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, changes: this.changes }));
+      res.end(JSON.stringify({ success: true, changes: result.rowCount }));
     });
     return;
   }
 
   // 5. Get Purchases
   if (req.method === 'GET' && urlPath === '/api/purchases') {
-    db.all(`SELECT * FROM purchases ORDER BY id DESC`, [], (err, rows) => {
+    pool.query('SELECT * FROM purchases ORDER BY id DESC', (err, result) => {
       if (err) {
         res.writeHead(500); res.end(err.message); return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(rows));
+      res.end(JSON.stringify(result.rows));
     });
     return;
   }
@@ -290,14 +258,16 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         const { image, name, brand, category, buy_date, source, price, url, status, remarks } = data;
         
-        db.run(`
-          INSERT INTO purchases (image, name, brand, category, buy_date, source, price, url, status, remarks)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [image, name, brand, category, buy_date, source, price, url, status, remarks], function(err) {
-          if (err) { res.writeHead(500); res.end(err.message); return; }
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, id: this.lastID }));
-        });
+        pool.query(
+          `INSERT INTO purchases (image, name, brand, category, buy_date, source, price, url, status, remarks)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          [image, name, brand, category, buy_date, source, price, url, status, remarks],
+          (err, result) => {
+            if (err) { res.writeHead(500); res.end(err.message); return; }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, id: result.rows[0].id }));
+          }
+        );
       } catch (e) {
         res.writeHead(400); res.end('Invalid request');
       }
@@ -305,6 +275,60 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 7. Update Purchase
+  if (req.method === 'PUT' && urlPath.startsWith('/api/purchases/')) {
+    const id = urlPath.split('/').pop();
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const updates = [];
+        const values = [];
+        let paramIndex = 1;
+        
+        for (const [key, value] of Object.entries(data)) {
+          if (key !== 'id') {
+            updates.push(`${key} = $${paramIndex}`);
+            values.push(value);
+            paramIndex++;
+          }
+        }
+        
+        if (updates.length === 0) {
+          res.writeHead(400); res.end('No valid fields to update'); return;
+        }
+        
+        values.push(id);
+        
+        pool.query(
+          `UPDATE purchases SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+          values,
+          (err, result) => {
+            if (err) { res.writeHead(500); res.end(err.message); return; }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, changes: result.rowCount }));
+          }
+        );
+      } catch (e) {
+        res.writeHead(400); res.end('Invalid request');
+      }
+    });
+    return;
+  }
+
+  // 8. Delete Purchase
+  if (req.method === 'DELETE' && urlPath.startsWith('/api/purchases/')) {
+    const id = urlPath.split('/').pop();
+    pool.query('DELETE FROM purchases WHERE id = $1', [id], (err, result) => {
+      if (err) { res.writeHead(500); res.end(err.message); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, changes: result.rowCount }));
+    });
+    return;
+  }
+
+  // Static file serving
   if (!filePath.startsWith(root)) {
     res.writeHead(403); res.end('Forbidden'); return;
   }
@@ -331,6 +355,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`Static server running at http://localhost:${port}/`);
+  console.log(`Server running at http://localhost:${port}/`);
 });
-
