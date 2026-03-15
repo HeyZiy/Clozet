@@ -56,12 +56,14 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 system-ui, -a
 
 .content section{margin:18px 0 28px}
 .content h2{margin:8px 0 10px;font-size:18px}
-.table{width:100%;border-collapse:separate;border-spacing:0;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.2)}
+.table-responsive{width:100%;overflow-x:auto;border-radius:12px;border:1px solid var(--border);background:var(--panel);box-shadow:0 4px 20px rgba(0,0,0,0.2)}
+.table{width:100%;border-collapse:separate;border-spacing:0;background:var(--panel);border-radius:12px;overflow:hidden;}
+.table-responsive .table{border-radius:0;border:none;box-shadow:none;overflow:visible}
 .table th,.table td{padding:12px 14px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .table th{background:#1a1f29;color:var(--text);font-weight:600;font-size:13px;position:sticky;top:0;z-index:1;border-bottom:2px solid var(--border)}
 .table td.col-name{white-space:normal;min-width:180px;max-width:300px}
-.table td.col-actions{position:sticky;right:0;background:var(--panel);border-left:1px solid var(--border);box-shadow:-4px 0 10px rgba(0,0,0,0.2)}
-.table th:last-child{position:sticky;right:0;z-index:2;background:#1a1f29;box-shadow:-4px 0 10px rgba(0,0,0,0.2)}
+.table td.col-actions{position:sticky;right:0;z-index:10;background:var(--panel);border-left:1px solid var(--border);box-shadow:-4px 0 10px rgba(0,0,0,0.2)}
+.table th:last-child{position:sticky;right:0;z-index:12;background:#1a1f29;box-shadow:-4px 0 10px rgba(0,0,0,0.2)}
 
 /* Mobile Card View */
 @media (max-width: 768px) {
@@ -86,6 +88,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 system-ui, -a
 
 .table tr:last-child td{border-bottom:0}
 .table tr:hover td{background:rgba(79,124,255,0.04)}
+.table tr:hover td.col-actions{background:#1a1e28} /* retain slightly different bg for actions on hover so it stays opaque */
 .row-actions{display:flex;gap:4px;align-items:center}
 .edit-btn, .move-btn{opacity:0.2;transition:opacity 0.2s;cursor:pointer;background:none;border:1px solid transparent;padding:2px 6px;font-size:12px;border-radius:4px}
 .edit-btn{color:var(--brand)}
@@ -139,6 +142,10 @@ tr:hover .edit-btn, tr:hover .move-btn{opacity:1;border-color:rgba(255,255,255,0
   opacity: 1;
 }
 .form-group select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23a3acc2' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+
+/* 可输入下拉框（Combobox）样式 */
+.combobox-input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23a3acc2' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+.combobox-input::-webkit-calendar-picker-indicator{opacity:0;cursor:pointer;position:absolute;right:0;width:30px;height:100%}
 .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.05);color:var(--muted);border:1px solid rgba(255,255,255,0.1);font-size:12px;white-space:nowrap}
 
 /* Status Colors */

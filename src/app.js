@@ -8,7 +8,7 @@ const contentEl = $('#content');
 const loadingEl = $('#loading');
 const searchEl = $('#global-search');
 
-let currentView = 'finance';
+let currentView = 'wardrobe';
 
 const views = {
   finance: () => renderFinanceView(contentEl, loadingEl, navigate),
@@ -64,4 +64,4 @@ window.exportFinancialReport = function() {
 };
 
 initNavigation();
-navigate('finance');
+navigate('wardrobe');

@@ -1,54 +1,22 @@
 import { $, $$, escapeHtml } from '../utils.js';
 import { OPTIONS_SEASONS, OPTIONS_STATUSES } from '../config.js';
 
-export async function loadCsv(url) {
+export async function fetchData(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`加载失败: ${url}`);
-  const text = await res.text();
-  return text;
+  const data = await res.json();
+  return data;
 }
 
-export function normalize(csvText) {
-  const lines = csvText.trim().split('\n');
-  if (!lines.length) return { headers: [], normalized: [] };
+export function normalize(data) {
+  // Maintaining compatibility with existing code where it expects { headers, normalized }
+  if (!data || !data.length) return { headers: [], normalized: [] };
   
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  const normalized = [];
-  
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
-    if (values.length === 0) continue;
-    
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = values[idx] || '';
-    });
-    normalized.push(row);
-  }
-  
-  return { headers, normalized };
+  const headers = Object.keys(data[0]);
+  return { headers, normalized: data };
 }
 
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  result.push(current.trim());
-  
-  return result;
-}
+let currentSort = { key: null, asc: true };
 
 export function renderCsvTable(container, title, fileType, rows, filterFn, showActions = true) {
   if (!rows || rows.length === 0) {
@@ -62,8 +30,33 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
     return;
   }
   
+  // Apply sorting if active
+  let displayRows = [...filteredRows];
+  if (currentSort.key) {
+    displayRows.sort((a, b) => {
+      let valA = a[currentSort.key] || '';
+      let valB = b[currentSort.key] || '';
+      
+      // Numeric or Date parsing for specific fields
+      if (currentSort.key.includes('价格') || currentSort.key.includes('金额')) {
+        valA = parseFloat(valA) || 0;
+        valB = parseFloat(valB) || 0;
+      } else if (currentSort.key.includes('日期')) {
+        valA = new Date(valA).getTime() || 0;
+        valB = new Date(valB).getTime() || 0;
+      }
+      
+      if (valA < valB) return currentSort.asc ? -1 : 1;
+      if (valA > valB) return currentSort.asc ? 1 : -1;
+      return 0;
+    });
+  }
+  
   const headers = Object.keys(filteredRows[0]);
-  const displayHeaders = headers.filter(h => !['id', 'ID', '_id'].includes(h.toLowerCase()));
+  const displayHeaders = headers.filter(h => {
+    const hl = h.toLowerCase();
+    return !['id', '_id', 'location', 'status', '状态'].includes(hl);
+  });
   
   container.innerHTML = `
     <div class="controls">
@@ -74,21 +67,29 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
         <button class="batch-btn danger" data-batch-action="delete">删除</button>
       </div>
     </div>
-    <table class="table">
-      <thead>
-        <tr>
-          <th><input type="checkbox" data-select-all></th>
-          ${displayHeaders.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
-          ${showActions ? '<th>操作</th>' : ''}
-        </tr>
-      </thead>
-      <tbody>
-        ${filteredRows.map((row, idx) => renderTableRow(row, idx, displayHeaders, fileType, showActions)).join('')}
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:40px"><input type="checkbox" data-select-all></th>
+            ${displayHeaders.map(h => {
+              const isActive = currentSort.key === h;
+              const dirIcon = isActive ? (currentSort.asc ? ' ↑' : ' ↓') : '';
+              return `<th class="sortable-header" data-sort-key="${escapeHtml(h)}" style="cursor:pointer; user-select:none;">
+                ${escapeHtml(h)}<span class="muted" style="font-size:12px">${dirIcon}</span>
+              </th>`;
+            }).join('')}
+            ${showActions ? '<th>操作</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${displayRows.map((row, idx) => renderTableRow(row, idx, displayHeaders, fileType, showActions)).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
   
-  setupTableEvents(container, fileType, filteredRows);
+  setupTableEvents(container, fileType, filteredRows, title, filterFn, showActions);
 }
 
 function renderTableRow(row, idx, headers, fileType, showActions) {
@@ -170,10 +171,25 @@ function renderRowActions(fileType) {
   return `<div class="row-actions">${actions.join('')}</div>`;
 }
 
-export function setupTableEvents(container, fileType, rows) {
+export function setupTableEvents(container, fileType, rows, title, filterFn, showActions) {
   const selectAll = $('[data-select-all]', container);
   const batchActions = $('[data-batch-actions]', container);
   const selectedCount = $('[data-selected-count]', container);
+  
+  // Setup sorting header clicks
+  $$('.sortable-header', container).forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sortKey;
+      if (currentSort.key === key) {
+        currentSort.asc = !currentSort.asc;
+      } else {
+        currentSort.key = key;
+        currentSort.asc = true;
+      }
+      // Re-trigger render
+      renderCsvTable(container, title, fileType, rows, filterFn, showActions);
+    });
+  });
   
   if (selectAll) {
     selectAll.addEventListener('change', (e) => {
@@ -208,24 +224,140 @@ export function setupTableEvents(container, fileType, rows) {
       // Import and show appropriate form
       if (fileType === 'purchases') {
         const { showPurchaseForm } = await import('./purchaseForm.js');
-        showPurchaseForm((updatedData) => {
-          console.log('Saving updated purchase:', updatedData);
-          // Logic to save edit would go here - for now just alert
-          alert('编辑功能正在对接保存接口...');
+        showPurchaseForm(async (updatedData) => {
+          try {
+            const res = await fetch(`/api/purchases/${rowData.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatedData)
+            });
+            if (res.ok) {
+              alert('编辑成功，请刷新页面查看！');
+            } else {
+              alert('编辑失败');
+            }
+          } catch(e) {
+            alert('保存失败：' + e.message);
+          }
         }, rowData); // Pass rowData to populate form
       } else {
         const { showModal } = await import('./modal.js');
-        showModal('编辑项目', rowData, (updatedData) => {
-          console.log('Saving updated project item:', updatedData);
-          alert('编辑功能正在对接保存接口...');
+        showModal('编辑项目', rowData, async (updatedData) => {
+          try {
+            const res = await fetch(`/api/items/${rowData.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatedData)
+            });
+            if (res.ok) {
+              alert('编辑成功，请刷新(切换标签)查看！');
+            } else {
+              alert('编辑失败');
+            }
+          } catch(e) {
+            alert('保存失败：' + e.message);
+          }
         });
       }
     } else if (action === 'move') {
       const target = btn.dataset.target;
-      alert(`移动功能 (从 ${fileType} 到 ${target}) 开发中...`);
+      if (confirm(`确定要将该物品移动到 ${target} 吗？`)) {
+        try {
+          const res = await fetch(`/api/items/${rowData.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location: target })
+          });
+          if (res.ok) alert('移动成功，请刷新页面即可！');
+        } catch(e) {
+          alert('操作失败：' + e.message);
+        }
+      }
     } else if (action === 'delete') {
       if (confirm('确定要删除这项吗？')) {
-        alert('删除功能开发中...');
+        const endpoint = fileType === 'purchases' ? `/api/purchases/${rowData.id}` : `/api/items/${rowData.id}`;
+        try {
+          const res = await fetch(endpoint, { method: 'DELETE' });
+          if (res.ok) alert('删除成功，请刷新页面！');
+        } catch(e) {
+          alert('删除失败：' + e.message);
+        }
+      }
+    }
+  });
+
+  // Handle batch actions (Move, Delete)
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-batch-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.batchAction;
+    const selectedRows = $$('[data-row-select]:checked', container).map(cb => {
+      const rowIdx = cb.closest('tr').dataset.rowIdx;
+      return rows[rowIdx];
+    }).filter(row => row);
+
+    if (selectedRows.length === 0) {
+      alert('请先选择要操作的项');
+      return;
+    }
+
+    if (action === 'delete') {
+      if (confirm(`确定要删除选中的 ${selectedRows.length} 项吗？`)) {
+        let successCount = 0;
+        let failCount = 0;
+        for (const row of selectedRows) {
+          try {
+            const endpoint = fileType === 'purchases' ? `/api/purchases/${row.id}` : `/api/items/${row.id}`;
+            const res = await fetch(endpoint, { method: 'DELETE' });
+            if (res.ok) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } catch(e) {
+            failCount++;
+          }
+        }
+        if (failCount === 0) {
+          alert(`批量删除成功 (${successCount} 项)，请刷新页面！`);
+        } else {
+          alert(`删除完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+        }
+      }
+    } else if (action === 'move') {
+      // Show move target selection
+      const targets = fileType === 'purchases' ? [] : ['inventory', 'storage', 'discard'];
+      if (targets.length === 0) {
+        alert('购买记录不支持移动操作');
+        return;
+      }
+      const targetLabels = { inventory: '正在使用', storage: '已收纳', discard: '已淘汰' };
+      const target = prompt(`选择目标位置：\n${targets.map(t => `${t} - ${targetLabels[t]}`).join('\n')}`);
+      if (target && targets.includes(target)) {
+        let successCount = 0;
+        let failCount = 0;
+        for (const row of selectedRows) {
+          try {
+            const res = await fetch(`/api/items/${row.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ location: target })
+            });
+            if (res.ok) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } catch(e) {
+            failCount++;
+          }
+        }
+        if (failCount === 0) {
+          alert(`批量移动到 ${targetLabels[target]} 成功 (${successCount} 项)，请刷新页面！`);
+        } else {
+          alert(`移动完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+        }
       }
     }
   });

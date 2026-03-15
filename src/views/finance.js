@@ -1,6 +1,6 @@
 import { $, $$, escapeHtml, formatPrice, formatDate, getStoredYear, setStoredYear, getBudgets } from '../utils.js';
-import { FILES, DEFAULT_BUDGETS } from '../config.js';
-import { loadCsv, normalize, renderCsvTable, setupTableEvents } from '../components/table.js';
+import { DEFAULT_BUDGETS } from '../config.js';
+import { fetchData, normalize, renderCsvTable, setupTableEvents } from '../components/table.js';
 import { showPurchaseForm, hidePurchaseForm } from '../components/purchaseForm.js';
 
 let currentTab = 'overview';
@@ -10,8 +10,8 @@ export async function renderFinanceView(contentEl, loadingEl, navigate) {
   currentTab = 'overview';
   
   try {
-    const purchRaw = await loadCsv(encodeURI(FILES.purchases));
-    const purch = normalize(purchRaw).normalized;
+    const rawData = await fetchData('/api/purchases');
+    const purch = normalize(rawData).normalized;
     
     renderFinanceLayout(contentEl, purch, navigate);
     setupFinanceEvents(contentEl, navigate);
@@ -187,8 +187,8 @@ function renderHistoryTab(tabEl, purch, navigate) {
       showPurchaseForm(async (data) => {
         await savePurchase(data);
         // Refresh the view
-        const purchRaw = await loadCsv(encodeURI(FILES.purchases));
-        const newPurch = normalize(purchRaw).normalized;
+        const rawData = await fetchData('/api/purchases');
+        const newPurch = normalize(rawData).normalized;
         renderTabContent($('#tab-content', tabEl.parentElement), newPurch, navigate);
       });
     });
@@ -197,7 +197,7 @@ function renderHistoryTab(tabEl, purch, navigate) {
 
 async function savePurchase(data) {
   try {
-    const response = await fetch('/api/save/purchases.csv', {
+    const response = await fetch('/api/purchases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -334,8 +334,8 @@ function setupFinanceEvents(contentEl, navigate) {
       $$('.tab-btn', contentEl).forEach(b => b.classList.remove('active'));
       e.target.classList.add('active');
       
-      const purchRaw = await loadCsv(encodeURI(FILES.purchases));
-      const purch = normalize(purchRaw).normalized;
+      const rawData = await fetchData('/api/purchases');
+      const purch = normalize(rawData).normalized;
       renderTabContent($('#tab-content', contentEl), purch, navigate);
       setupFinanceEvents(contentEl, navigate);
     });
@@ -345,8 +345,8 @@ function setupFinanceEvents(contentEl, navigate) {
   if (yearSelector) {
     yearSelector.addEventListener('change', async (e) => {
       setStoredYear(parseInt(e.target.value));
-      const purchRaw = await loadCsv(encodeURI(FILES.purchases));
-      const purch = normalize(purchRaw).normalized;
+      const rawData = await fetchData('/api/purchases');
+      const purch = normalize(rawData).normalized;
       renderTabContent($('#tab-content', contentEl), purch, navigate);
       setupFinanceEvents(contentEl, navigate);
     });
@@ -359,8 +359,8 @@ function setupFinanceEvents(contentEl, navigate) {
       $$('.tab-btn', contentEl).forEach(b => b.classList.remove('active'));
       $$('[data-tab="history"]', contentEl).forEach(b => b.classList.add('active'));
       
-      const purchRaw = await loadCsv(encodeURI(FILES.purchases));
-      const purch = normalize(purchRaw).normalized;
+      const rawData = await fetchData('/api/purchases');
+      const purch = normalize(rawData).normalized;
       renderTabContent($('#tab-content', contentEl), purch, navigate);
       setupFinanceEvents(contentEl, navigate);
     });

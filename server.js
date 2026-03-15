@@ -2,9 +2,19 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const sqlite3 = require('sqlite3').verbose();
 
 const port = process.env.PORT || 5173;
 const root = __dirname;
+const dbPath = path.join(root, 'data', 'database.sqlite');
+
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database', err.message);
+  } else {
+    console.log(`Connected to the SQLite database at ${dbPath}`);
+  }
+});
 
 // Helper function to escape CSV fields
 function escapeCsvField(field) {
@@ -174,92 +184,122 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Handle API Save (POST /api/save)
-  if (req.method === 'POST' && urlPath === '/api/save') {
+  // === SQLite API Endpoints ===
+
+  // 1. Get Items
+  if (req.method === 'GET' && urlPath === '/api/items') {
+    db.all(`SELECT * FROM items ORDER BY id DESC`, [], (err, rows) => {
+      if (err) {
+        res.writeHead(500); res.end(err.message); return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(rows));
+    });
+    return;
+  }
+
+  // 2. Add New Item
+  if (req.method === 'POST' && urlPath === '/api/items') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { filename, content } = JSON.parse(body);
-        if (!filename || content === undefined) {
-          res.writeHead(400); res.end('Invalid request'); return;
-        }
+        const data = JSON.parse(body);
+        const { image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location } = data;
         
-        // Ensure saving is restricted to the root or subdirectories like 'data/'
-        const safePath = path.resolve(root, filename);
-        if (!safePath.startsWith(root)) {
-          res.writeHead(403); res.end('Forbidden'); return;
-        }
-
-        // Ensure directory exists
-        const dir = path.dirname(safePath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-
-        fs.writeFileSync(safePath, content, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
+        db.run(`
+          INSERT INTO items (image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location || 'inventory'], function(err) {
+          if (err) { res.writeHead(500); res.end(err.message); return; }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, id: this.lastID }));
+        });
       } catch (e) {
-        res.writeHead(500); res.end(e.message);
+        res.writeHead(400); res.end('Invalid request');
       }
     });
     return;
   }
 
-  // Handle API Save Row to CSV (POST /api/save/:filename)
-  if (req.method === 'POST' && urlPath.startsWith('/api/save/')) {
-    const filename = urlPath.replace('/api/save/', '');
-    if (!filename.endsWith('.csv')) {
-      res.writeHead(400); res.end('Only CSV files supported'); return;
-    }
-    
+  // 3. Update Item (including color, location, etc)
+  if (req.method === 'PUT' && urlPath.startsWith('/api/items/')) {
+    const id = urlPath.split('/').pop();
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const rowData = JSON.parse(body);
-        
-        // Ensure saving is restricted to the data directory
-        const safePath = path.resolve(root, 'data', filename);
-        if (!safePath.startsWith(path.resolve(root, 'data'))) {
-          res.writeHead(403); res.end('Forbidden'); return;
-        }
-
-        // Read existing CSV to get headers
-        let headers = [];
-        let existingContent = '';
-        
-        if (fs.existsSync(safePath)) {
-          existingContent = fs.readFileSync(safePath, 'utf8');
-          const lines = existingContent.trim().split('\n');
-          if (lines.length > 0) {
-            headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        const data = JSON.parse(body);
+        // Build dynamic update query based on provided fields
+        const updates = [];
+        const values = [];
+        for (const [key, value] of Object.entries(data)) {
+          if (key !== 'id') {
+            updates.push(`${key} = ?`);
+            values.push(value);
           }
         }
-
-        // If file is empty or doesn't exist, create with default headers
-        if (headers.length === 0) {
-          headers = Object.keys(rowData);
-          const headerLine = headers.map(h => escapeCsvField(h)).join(',');
-          fs.writeFileSync(safePath, headerLine + '\n', 'utf8');
+        
+        if (updates.length === 0) {
+          res.writeHead(400); res.end('No valid fields to update'); return;
         }
-
-        // Create CSV row matching headers
-        const rowValues = headers.map(key => {
-          const value = rowData[key] || '';
-          return escapeCsvField(value);
+        
+        values.push(id);
+        
+        db.run(`UPDATE items SET ${updates.join(', ')} WHERE id = ?`, values, function(err) {
+          if (err) { res.writeHead(500); res.end(err.message); return; }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, changes: this.changes }));
         });
-        
-        const rowLine = rowValues.join(',') + '\n';
-        
-        // Append to file
-        fs.appendFileSync(safePath, rowLine, 'utf8');
-        
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true }));
       } catch (e) {
-        res.writeHead(500); res.end(e.message);
+        res.writeHead(400); res.end('Invalid request');
+      }
+    });
+    return;
+  }
+
+  // 4. Delete Item
+  if (req.method === 'DELETE' && urlPath.startsWith('/api/items/')) {
+    const id = urlPath.split('/').pop();
+    db.run(`DELETE FROM items WHERE id = ?`, id, function(err) {
+      if (err) { res.writeHead(500); res.end(err.message); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, changes: this.changes }));
+    });
+    return;
+  }
+
+  // 5. Get Purchases
+  if (req.method === 'GET' && urlPath === '/api/purchases') {
+    db.all(`SELECT * FROM purchases ORDER BY id DESC`, [], (err, rows) => {
+      if (err) {
+        res.writeHead(500); res.end(err.message); return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(rows));
+    });
+    return;
+  }
+
+  // 6. Add Purchase
+  if (req.method === 'POST' && urlPath === '/api/purchases') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const { image, name, brand, category, buy_date, source, price, url, status, remarks } = data;
+        
+        db.run(`
+          INSERT INTO purchases (image, name, brand, category, buy_date, source, price, url, status, remarks)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [image, name, brand, category, buy_date, source, price, url, status, remarks], function(err) {
+          if (err) { res.writeHead(500); res.end(err.message); return; }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, id: this.lastID }));
+        });
+      } catch (e) {
+        res.writeHead(400); res.end('Invalid request');
       }
     });
     return;

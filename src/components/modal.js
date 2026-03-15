@@ -1,5 +1,5 @@
 import { $, $$, escapeHtml } from '../utils.js';
-import { OPTIONS_SEASONS, OPTIONS_STATUSES } from '../config.js';
+import { OPTIONS_SEASONS, OPTIONS_STATUSES, OPTIONS_CATEGORIES, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
 
 let currentEditData = null;
 let onSaveCallback = null;
@@ -26,6 +26,20 @@ export function hideModal() {
   modal.hidden = true;
   currentEditData = null;
   onSaveCallback = null;
+}
+
+// 生成可输入下拉框（Combobox）
+function generateCombobox(key, value, options, placeholder) {
+  const datalistId = `datalist-${key}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `
+    <div class="form-group">
+      <label>${escapeHtml(key)}</label>
+      <input type="text" name="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${placeholder}" list="${datalistId}" class="combobox-input" autocomplete="off">
+      <datalist id="${datalistId}">
+        ${options.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+      </datalist>
+    </div>
+  `;
 }
 
 function generateFormFields(data) {
@@ -96,7 +110,22 @@ function generateFormFields(data) {
         </div>
       `;
     }
-    
+
+    // 分类 - 可输入下拉框 (支持中文和英文字段名)
+    if (keyLower === 'category' || keyLower === '分类' || keyLower.includes('分类')) {
+      return generateCombobox(key, value, OPTIONS_CATEGORIES, '例如：短袖');
+    }
+
+    // 品牌 - 可输入下拉框 (支持中文和英文字段名)
+    if (keyLower === 'brand' || keyLower === '品牌' || keyLower.includes('品牌')) {
+      return generateCombobox(key, value, OPTIONS_BRANDS, '例如：优衣库');
+    }
+
+    // 购买途径/来源 - 可输入下拉框 (支持中文和英文字段名)
+    if (keyLower === 'source' || keyLower === '来源' || keyLower === '购买途径' || keyLower.includes('来源') || keyLower.includes('途径')) {
+      return generateCombobox(key, value, OPTIONS_SOURCES, '例如：淘宝');
+    }
+
     return `
       <div class="form-group">
         <label>${escapeHtml(key)}</label>

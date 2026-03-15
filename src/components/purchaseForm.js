@@ -1,5 +1,5 @@
 import { $, $$, escapeHtml } from '../utils.js';
-import { OPTIONS_SEASONS, OPTIONS_STATUSES } from '../config.js';
+import { OPTIONS_SEASONS, OPTIONS_STATUSES, OPTIONS_CATEGORIES, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
 
 let onSaveCallback = null;
 let uploadedImageData = null;
@@ -30,31 +30,28 @@ export function hidePurchaseForm() {
 
 function generatePurchaseForm() {
   const today = new Date().toISOString().split('T')[0];
-  
+  const uniqueId = Date.now();
+
   return `
     <div class="form-group">
       <label>名称 *</label>
       <input type="text" name="名称" placeholder="例如：优衣库T恤" required>
     </div>
-    
+
     <div class="form-group">
       <label>分类</label>
-      <select name="分类">
-        <option value="">请选择</option>
-        <option value="短袖">短袖</option>
-        <option value="长袖">长袖</option>
-        <option value="外套">外套</option>
-        <option value="裤子">裤子</option>
-        <option value="短裤">短裤</option>
-        <option value="羽绒服">羽绒服</option>
-        <option value="秋衣">秋衣</option>
-        <option value="特殊">特殊</option>
-      </select>
+      <input type="text" name="分类" placeholder="例如：短袖" list="purchase-categories-${uniqueId}" class="combobox-input" autocomplete="off">
+      <datalist id="purchase-categories-${uniqueId}">
+        ${OPTIONS_CATEGORIES.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+      </datalist>
     </div>
-    
+
     <div class="form-group">
       <label>品牌</label>
-      <input type="text" name="品牌" placeholder="例如：优衣库">
+      <input type="text" name="品牌" placeholder="例如：优衣库" list="purchase-brands-${uniqueId}" class="combobox-input" autocomplete="off">
+      <datalist id="purchase-brands-${uniqueId}">
+        ${OPTIONS_BRANDS.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+      </datalist>
     </div>
     
     <div class="form-group">
@@ -88,16 +85,10 @@ function generatePurchaseForm() {
     
     <div class="form-group">
       <label>购买途径</label>
-      <select name="购买途径">
-        <option value="">请选择</option>
-        <option value="淘宝">淘宝</option>
-        <option value="京东">京东</option>
-        <option value="拼多多">拼多多</option>
-        <option value="1688">1688</option>
-        <option value="小红书">小红书</option>
-        <option value="线下">线下</option>
-        <option value="其他">其他</option>
-      </select>
+      <input type="text" name="购买途径" placeholder="例如：淘宝" list="purchase-sources-${uniqueId}" class="combobox-input" autocomplete="off">
+      <datalist id="purchase-sources-${uniqueId}">
+        ${OPTIONS_SOURCES.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+      </datalist>
     </div>
     
     <div class="form-group">
