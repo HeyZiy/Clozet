@@ -84,7 +84,8 @@ function generateFormFields(data) {
       `;
     }
     
-    if (keyLower.includes('日期')) {
+    // 日期字段 - 支持中文"日期"和英文"date"
+    if (keyLower.includes('日期') || keyLower.includes('date')) {
       return `
         <div class="form-group">
           <label>${escapeHtml(key)}</label>
