@@ -1,7 +1,7 @@
 import { $, $$, escapeHtml, formatPrice, formatDate, getStoredYear, setStoredYear, getBudgets } from '../utils.js';
 import { DEFAULT_BUDGETS } from '../config.js';
 import { fetchData, normalize, renderCsvTable, setupTableEvents } from '../components/table.js';
-import { showPurchaseForm, hidePurchaseForm } from '../components/purchaseForm.js';
+import { showPurchaseForm, hidePurchaseForm, showImageImportModal } from '../components/purchaseForm.js';
 
 let currentTab = 'overview';
 
@@ -169,9 +169,12 @@ function renderOverviewTab(tabEl, purch, navigate) {
 function renderHistoryTab(tabEl, purch, navigate) {
   tabEl.innerHTML = `
     <div class="dash-section">
-      <div class="controls" style="margin-bottom:16px">
-        <button class="action-btn" id="add-purchase-btn" style="background:var(--brand);color:white;border-color:var(--brand)">
-          ➕ 添加购买记录
+      <div class="controls" style="margin-bottom:16px; display:flex; gap:12px">
+        <button class="action-btn" id="import-image-btn" style="background:var(--brand);color:white;border-color:var(--brand)">
+          📸 从图片导入
+        </button>
+        <button class="action-btn" id="add-purchase-btn">
+          📝 手动添加
         </button>
       </div>
       <div id="purchases-table-container"></div>
@@ -185,6 +188,19 @@ function renderHistoryTab(tabEl, purch, navigate) {
   if (addBtn) {
     addBtn.addEventListener('click', () => {
       showPurchaseForm(async (data) => {
+        await savePurchase(data);
+        // Refresh the view
+        const rawData = await fetchData('/api/purchases');
+        const newPurch = normalize(rawData).normalized;
+        renderTabContent($('#tab-content', tabEl.parentElement), newPurch, navigate);
+      });
+    });
+  }
+
+  const importBtn = $('#import-image-btn', tabEl);
+  if (importBtn) {
+    importBtn.addEventListener('click', () => {
+      showImageImportModal(async (data) => {
         await savePurchase(data);
         // Refresh the view
         const rawData = await fetchData('/api/purchases');

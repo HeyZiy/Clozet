@@ -354,3 +354,170 @@ function handleSave() {
 function handlePaste(e) {
   // 这个函数会被setupFormEvents中的同名函数覆盖
 }
+
+// ----------------------------------------------------
+// One-click Pure Image Import UI (Fast track)
+// ----------------------------------------------------
+
+let onFastSaveCallback = null;
+
+export function showImageImportModal(onSave) {
+  onFastSaveCallback = onSave;
+  
+  const modal = $('#modal-overlay');
+  const modalTitle = $('#modal-title');
+  const modalBody = $('#modal-body');
+  const modalFooter = $('.modal-footer');
+  
+  modalTitle.textContent = '📸 极速从图片导入';
+  modalFooter.style.display = 'none'; // Hide save/cancel for fast track
+  
+  modalBody.innerHTML = `
+    <div id="fast-import-area" style="
+      border: 3px dashed var(--brand);
+      border-radius: 12px;
+      padding: 40px;
+      text-align: center;
+      background: rgba(79,124,255,0.05);
+      cursor: pointer;
+      transition: all 0.2s;
+      margin: 20px 0;
+    ">
+      <div id="import-state-idle">
+        <div style="font-size:40px;margin-bottom:12px">📥</div>
+        <h3 style="margin:0 0 8px 0;color:var(--text)">直接粘贴 (Ctrl+V) 或点击上传</h3>
+        <p style="color:var(--muted);font-size:13px;margin:0">
+          截图包含完整的商品名和价格即可实现「无感入库」
+        </p>
+      </div>
+      <div id="import-state-loading" style="display:none;">
+        <div style="font-size:40px;margin-bottom:12px;animation: pulse 1.5s infinite;">🤖</div>
+        <h3 style="margin:0 0 8px 0;color:var(--brand)">AI 全速解析中...</h3>
+        <p style="color:var(--muted);font-size:13px;margin:0">这可能是魔法，请稍候片刻</p>
+      </div>
+    </div>
+    <input type="file" id="fast-img-input" accept="image/*" style="display:none">
+  `;
+  
+  modal.hidden = false;
+  
+  const uploadArea = $('#fast-import-area');
+  const fileInput = $('#fast-img-input');
+  const stateIdle = $('#import-state-idle');
+  const stateLoading = $('#import-state-loading');
+  const closeBtn = $('#modal-close');
+  
+  const closeFastModal = () => {
+    modal.hidden = true;
+    modalFooter.style.display = 'flex'; // Restore for standard form
+    document.removeEventListener('paste', handleFastPaste);
+  };
+
+  closeBtn.addEventListener('click', closeFastModal, { once: true });
+  
+  // Handlers
+  const handleFastImage = async (file) => {
+    if (!file.type.startsWith('image/')) {
+      alert('请提供图片文件！');
+      return;
+    }
+    
+    // UI state change
+    stateIdle.style.display = 'none';
+    stateLoading.style.display = 'block';
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64Img = e.target.result;
+      try {
+        const response = await fetch('/api/recognize-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Img })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.name && data.price) {
+          // Construct the record object silently
+          const today = new Date().toISOString().split('T')[0];
+          const record = {
+            '名称': data.name,
+            '价格': parseFloat(data.price) || 0,
+            '品牌': data.brand || '',
+            '分类': data.category || '',
+            '购买途径': data.source || '',
+            '季节': data.season || '',
+            '状态': '已入库',
+            '购买日期': today,
+            '图片': base64Img,
+            '购买链接': ''
+          };
+          
+          if (onFastSaveCallback) {
+            await onFastSaveCallback(record);
+          }
+          closeFastModal();
+        } else {
+          // Fallback to manual if critical info missing
+          alert('AI 提取失败或未发现金额/名称，请手动完善表单。');
+          closeFastModal();
+          // Pre-fill standard form as much as possible
+          showPurchaseForm(onFastSaveCallback);
+          setTimeout(() => {
+            if (data.name) $('input[name="名称"]').value = data.name;
+            if (data.price) $('input[name="价格"]').value = data.price;
+            if (data.brand) $('input[name="品牌"]').value = data.brand;
+            if (data.category) $('input[name="分类"]').value = data.category;
+            if (data.source) $('input[name="购买途径"]').value = data.source;
+            const imgInput = $('#img-data');
+            const previewImg = $('#preview-img');
+            const preview = $('#upload-preview');
+            const placeholder = $('#upload-placeholder');
+            if (imgInput) imgInput.value = base64Img;
+            if (previewImg) previewImg.src = base64Img;
+            if (preview) preview.style.display = 'block';
+            if (placeholder) placeholder.style.display = 'none';
+          }, 300);
+        }
+      } catch (err) {
+        console.error(err);
+        alert('网络错误或配置异常，识别失败');
+        closeFastModal();
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFastPaste = (evt) => {
+    const items = evt.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) handleFastImage(file);
+        break;
+      }
+    }
+  };
+
+  document.addEventListener('paste', handleFastPaste);
+  
+  uploadArea.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleFastImage(e.target.files[0]);
+  });
+  
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.style.opacity = '0.7';
+  });
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.style.opacity = '1';
+  });
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.style.opacity = '1';
+    if (e.dataTransfer.files.length) handleFastImage(e.dataTransfer.files[0]);
+  });
+}
