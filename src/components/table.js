@@ -18,6 +18,14 @@ export function normalize(data) {
 
 let currentSort = { key: null, asc: true };
 
+// Column persistence logic
+const STORAGE_KEY = 'wardrobe_column_prefs';
+let columnPrefs = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+
+function savePrefs() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(columnPrefs));
+}
+
 export function renderCsvTable(container, title, fileType, rows, filterFn, showActions = true) {
   if (!rows || rows.length === 0) {
     container.innerHTML = `<div class="muted">暂无数据</div>`;
@@ -52,20 +60,52 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
     });
   }
   
-  const headers = Object.keys(filteredRows[0]);
-  const displayHeaders = headers.filter(h => {
-    const hl = h.toLowerCase();
-    return !['id', '_id', 'location', 'status', '状态'].includes(hl);
+  const allHeaders = Object.keys(filteredRows[0]);
+  
+  // Initialize prefs if empty for these headers
+  allHeaders.forEach(h => {
+    if (columnPrefs[h] === undefined) {
+      const isHiddenByDefault = ['URL', '链接', '日期', '来源', '品牌', 'add_date', 'buy_date'].some(k => h.toLowerCase().includes(k));
+      columnPrefs[h] = !isHiddenByDefault;
+    }
   });
+
+  const displayHeaders = allHeaders.filter(h => columnPrefs[h]);
   
   container.innerHTML = `
     <div class="controls">
       <input type="text" class="search" placeholder="搜索..." data-table-search>
-      <div class="batch-actions" data-batch-actions>
-        <span class="muted">已选 <span data-selected-count>0</span> 项</span>
-        <button class="batch-btn" data-batch-action="move">移动到...</button>
-        <button class="batch-btn danger" data-batch-action="delete">删除</button>
+    <div class="batch-actions animate-slide-up" data-batch-actions>
+      <div style="display:flex; align-items:center; gap:16px; border-right:1px solid rgba(255,255,255,0.1); padding-right:16px; margin-right:4px">
+        <span style="color:var(--brand); font-weight:800; font-size:16px" data-selected-count>0</span>
+        <span style="font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:1px">已选择</span>
       </div>
+      <button class="batch-btn" data-batch-action="move">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        批量区域移动
+      </button>
+      <button class="batch-btn danger" data-batch-action="delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px"><path d="M3 6h18m-2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
+        彻底删除记录
+      </button>
+      <button class="nav-btn" style="background:transparent; border:none; padding:8px; margin-left:8px; color:var(--muted)" onclick="document.querySelectorAll('[data-row-select]').forEach(cb => cb.checked = false); window.dispatchEvent(new Event('data-refreshed'));">
+        取消选择
+      </button>
+    </div>
+    <div style="position:relative">
+      <button class="column-settings-btn" id="col-settings-trigger" title="列设置">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <div class="column-selector-dropdown" id="col-selector-menu">
+        <div style="font-weight:800; font-size:12px; margin-bottom:12px; color:var(--text); letter-spacing:1px; text-transform:uppercase">显示列设置</div>
+        ${allHeaders.map(h => `
+          <label class="column-option">
+            <input type="checkbox" data-col-toggle="${h}" ${columnPrefs[h] ? 'checked' : ''}>
+            ${h}
+          </label>
+        `).join('')}
+      </div>
+    </div>
     </div>
     <div class="table-responsive">
       <table class="table">
@@ -94,36 +134,47 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
 
 function renderTableRow(row, idx, headers, fileType, showActions) {
   return `
-    <tr data-row-idx="${idx}">
-      <td class="col-check"><input type="checkbox" data-row-select></td>
-      ${headers.map(h => renderTableCell(row[h], h)).join('')}
-      ${showActions ? `<td class="col-actions">${renderRowActions(fileType)}</td>` : ''}
+    <tr data-row-id="${row.id}">
+      <td class="col-check" style="text-align:center"><input type="checkbox" data-row-select></td>
+      ${headers.map(h => renderTableCell(row[h], h, row)).join('')}
+      ${showActions ? `<td class="col-actions" style="text-align:right; padding-right:24px">${renderRowActions(fileType)}</td>` : ''}
     </tr>
   `;
 }
 
-function renderTableCell(value, header) {
+function renderTableCell(value, header, fullRow) {
   const headerLower = header.toLowerCase();
   
   if (headerLower.includes('图片') || headerLower.includes('image')) {
-    return `<td class="col-img" data-label="${escapeHtml(header)}">${value ? `<img src="${escapeHtml(value)}" class="table-img" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><rect fill=%22%23262b36%22 width=%2240%22 height=%2240%22/><text x=%2220%22 y=%2225%22 text-anchor=%22middle%22 fill=%22%23a3acc2%22 font-size=%2212%22>无图</text></svg>'">` : ''}</td>`;
+    return `<td class="col-img" data-label="${escapeHtml(header)}">${value ? `<img src="${escapeHtml(value)}" class="table-img" onerror="this.src='/assets/placeholder.svg'">` : ''}</td>`;
+  }
+
+  if (headerLower.includes('名称') || headerLower.includes('name')) {
+    const brand = fullRow['品牌'] || fullRow['brand'] || '';
+    return `
+      <td data-label="${escapeHtml(header)}">
+        <div style="font-weight:700; font-size:14px; color:#fff" class="cell-main-text">${escapeHtml(value)}</div>
+        ${brand ? `<div style="font-size:11px; color:var(--muted); margin-top:2px" class="cell-sub-text">${escapeHtml(brand)}</div>` : ''}
+      </td>
+    `;
   }
   
-  if (headerLower.includes('价格') || headerLower.includes('金额')) {
-    return `<td data-label="${escapeHtml(header)}">¥${escapeHtml(value || '0')}</td>`;
+  if (headerLower.includes('价格') || headerLower.includes('金额') || headerLower.includes('price')) {
+    const num = parseFloat(value);
+    return `<td data-label="${escapeHtml(header)}" style="font-weight:600; color:var(--accent)">${!isNaN(num) ? `¥${num.toFixed(0)}` : '¥0'}</td>`;
   }
   
-  if (headerLower.includes('状态')) {
+  if (headerLower.includes('状态') || headerLower.includes('status')) {
     const statusClass = getStatusClass(value);
     return `<td data-label="${escapeHtml(header)}"><span class="pill ${statusClass}">${escapeHtml(value)}</span></td>`;
   }
   
-  if (headerLower.includes('季节') || headerLower.includes('适用季节')) {
+  if (headerLower.includes('季节') || headerLower.includes('适用季节') || headerLower.includes('season')) {
     const seasonClass = getSeasonClass(value);
     return `<td data-label="${escapeHtml(header)}"><span class="pill ${seasonClass}">${escapeHtml(value)}</span></td>`;
   }
   
-  if (headerLower.includes('分类') || headerLower.includes('类型')) {
+  if (headerLower.includes('分类') || headerLower.includes('类型') || headerLower.includes('category')) {
     return `<td data-label="${escapeHtml(header)}"><span class="pill pill-category">${escapeHtml(value)}</span></td>`;
   }
   
@@ -153,22 +204,32 @@ function getSeasonClass(season) {
 function renderRowActions(fileType) {
   const actions = [];
   
+  // Custom SVG Icons for a premium feel
+  const icons = {
+    storage: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`,
+    inventory: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z"/></svg>`,
+    discard: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,
+    restore: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 017-8.7"/><path d="M14 4.3a9 9 0 017 8.7"/><polyline points="7 12 3 12 3 8"/><polyline points="17 12 21 12 21 16"/><path d="M3 12a9 9 0 0011 8.7"/><path d="M14 20.7a9 9 0 007-8.7"/></svg>`,
+    delete: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+    edit: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`
+  };
+
   if (fileType === 'inventory') {
-    actions.push(`<button class="move-btn storage" data-action="move" data-target="storage">收纳</button>`);
-    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard">淘汰</button>`);
+    actions.push(`<button class="move-btn storage" data-action="move" data-target="storage" title="移至收纳">${icons.storage}</button>`);
+    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰">${icons.discard}</button>`);
   } else if (fileType === 'storage') {
-    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory">取出</button>`);
-    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard">淘汰</button>`);
+    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="移回衣柜">${icons.inventory}</button>`);
+    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰">${icons.discard}</button>`);
   } else if (fileType === 'discard') {
-    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory">恢复</button>`);
-    actions.push(`<button class="move-btn delete" data-action="delete">删除</button>`);
+    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="恢复到衣柜">${icons.restore}</button>`);
+    actions.push(`<button class="move-btn delete" data-action="delete" title="彻底删除">${icons.delete}</button>`);
   } else if (fileType === 'purchases') {
-    actions.push(`<button class="move-btn delete" data-action="delete">删除</button>`);
+    actions.push(`<button class="move-btn delete" data-action="delete" title="彻底删除">${icons.delete}</button>`);
   }
   
-  actions.push(`<button class="edit-btn" data-action="edit">编辑</button>`);
+  actions.push(`<button class="edit-btn" data-action="edit" title="编辑属性">${icons.edit}</button>`);
   
-  return `<div class="row-actions">${actions.join('')}</div>`;
+  return `<div class="row-actions horizontal-actions">${actions.join('')}</div>`;
 }
 
 export function setupTableEvents(container, fileType, rows, title, filterFn, showActions) {
@@ -215,10 +276,11 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
     if (!btn) return;
     
     const action = btn.dataset.action;
-    const rowIdx = btn.closest('tr').dataset.rowIdx;
-    const rowData = rows[rowIdx];
+    const rowId = btn.closest('tr').dataset.rowId;
+    // Look up by id to avoid issues with sorting/filtering
+    const rowData = rows.find(r => String(r.id) === String(rowId));
     
-    console.log(`Action: ${action} on row ${rowIdx}`, rowData);
+    console.log(`Action: ${action} on row ID ${rowId}`, rowData);
     
     if (action === 'edit') {
       const { showModal } = await import('./modal.js');
@@ -367,6 +429,32 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
       $$('tbody tr', container).forEach(tr => {
         const text = tr.textContent.toLowerCase();
         tr.style.display = text.includes(query) ? '' : 'none';
+      });
+    });
+  }
+
+  // Column Selector Toggle
+  const colTrigger = $('#col-settings-trigger', container);
+  const colMenu = $('#col-selector-menu', container);
+  if (colTrigger && colMenu) {
+    colTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      colMenu.classList.toggle('active');
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (!colMenu.contains(e.target) && e.target !== colTrigger) {
+        colMenu.classList.remove('active');
+      }
+    });
+
+    $$('[data-col-toggle]', colMenu).forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const col = e.target.dataset.colToggle;
+        columnPrefs[col] = e.target.checked;
+        savePrefs();
+        // Re-render table instantly
+        renderCsvTable(container, title, fileType, rows, filterFn, showActions);
       });
     });
   }

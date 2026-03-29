@@ -2,18 +2,22 @@ import { $, $$, escapeHtml, getBudgets, setBudgets } from './utils.js';
 import { FILES, DEFAULT_BUDGETS } from './config.js';
 import { renderFinanceView } from './views/finance.js';
 import { renderWardrobeView } from './views/wardrobe.js';
+import { renderDashboardView } from './views/dashboard.js';
 import { showModal, hideModal } from './components/modal.js';
 
 const contentEl = $('#content');
 const loadingEl = $('#loading');
 const searchEl = $('#global-search');
 
-let currentView = 'wardrobe';
+let currentView = 'dashboard';
 
 const views = {
+  dashboard: () => renderDashboardView(contentEl, loadingEl, navigate),
   finance: () => renderFinanceView(contentEl, loadingEl, navigate),
   wardrobe: () => renderWardrobeView(contentEl, loadingEl, navigate),
 };
+
+window.navigate = navigate;
 
 function navigate(view) {
   currentView = view;
@@ -91,4 +95,4 @@ window.addEventListener('data-refreshed', () => {
 });
 
 initNavigation();
-navigate('wardrobe');
+navigate('dashboard');
