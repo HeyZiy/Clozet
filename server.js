@@ -367,7 +367,7 @@ JSON 的格式如下：
 如果某个字段无法分析出，可以留空字符串。`;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
             contents: [
                 prompt,
                 { inlineData: { data: base64Data, mimeType } }
