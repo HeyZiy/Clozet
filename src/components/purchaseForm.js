@@ -287,6 +287,13 @@ function setupFormEvents() {
           if (data.brand) $('input[name="品牌"]').value = data.brand;
           if (data.category) $('input[name="分类"]').value = data.category;
           if (data.source) $('input[name="购买途径"]').value = data.source;
+          if (data.season) {
+            const seasonSelect = $('select[name="季节"]');
+            if (seasonSelect) {
+              const matchedOption = Array.from(seasonSelect.options).find(opt => data.season.includes(opt.value) || opt.value.includes(data.season));
+              if (matchedOption) seasonSelect.value = matchedOption.value;
+            }
+          }
           
           alert('商品信息识别成功！');
         } else {

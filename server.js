@@ -1,11 +1,10 @@
+require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 const pool = require('./db');
-const tesseract = require('tesseract.js');
-const sharp = require('sharp');
-
+const { GoogleGenAI } = require('@google/genai');
 const port = process.env.PORT || 8080;
 const root = __dirname;
 
@@ -341,30 +340,49 @@ const server = http.createServer((req, res) => {
           res.writeHead(400); res.end('Image required'); return;
         }
 
-        // Extract base64 image data
+        if (!process.env.GEMINI_API_KEY) {
+          res.writeHead(400); res.end('API Key is missing in environment variables'); return;
+        }
+
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+        // Extract base64 image data and mime type
+        const match = image.match(/^data:image\/(png|jpg|jpeg|webp);base64,/);
+        const mimeType = match ? 'image/' + match[1] : 'image/jpeg';
         const base64Data = image.replace(/^data:image\/(png|jpg|jpeg|webp);base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
 
-        // Preprocess image for better OCR results
-        const processedBuffer = await sharp(buffer)
-          .resize({ width: 1200 })
-          .grayscale()
-          .threshold(128)
-          .toBuffer();
+        console.log('Sending image to Gemini Vision API...');
 
-        // Perform OCR with timeout control
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('OCR处理超时')), 30000)
-        );
-        const ocrPromise = tesseract.recognize(processedBuffer, 'chi_sim+eng', {
-          logger: info => console.log(info),
+        const prompt = `这是一张电商商品（如淘宝、京东等）或者实物商品的截图。请准确分析图片中的商品信息。
+必须返回严格的 JSON 格式，不要包含Markdown语法，不要包含任何前缀后缀代码块标记。
+JSON 的格式如下：
+{
+  "name": "商品名称（去掉一些冗余修饰词，保持核心品名）",
+  "price": "价格（纯数字字符串格式，不要带货币符号，例如 '99.00'）",
+  "brand": "品牌（如果在页面中找到或者你能认出它的主要品牌）",
+  "category": "分类（如：短袖、卫衣、外套、裤子、裙子、鞋子、配饰等）",
+  "source": "购买途径（页面平台，如淘宝、天猫、京东、拼多多、得物等）",
+  "season": "季节（推测该商品最适合哪个季节：春季、夏季、秋季、冬季、四季通用）"
+}
+如果某个字段无法分析出，可以留空字符串。`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-1.5-flash',
+            contents: [
+                prompt,
+                { inlineData: { data: base64Data, mimeType } }
+            ]
         });
-        const { data: { text } } = await Promise.race([ocrPromise, timeoutPromise]);
 
-        console.log('OCR Result:', text);
+        const textResponse = response.text;
+        console.log('Gemini API Response Text:', textResponse);
 
-        // Extract product information from OCR text
-        const extractedInfo = extractProductInfo(text);
+        // Try to parse the clean json
+        let cleanJsonText = textResponse.trim();
+        // Remove markdown code blocks if the model unexpectedly returned them
+        cleanJsonText = cleanJsonText.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+        
+        const extractedInfo = JSON.parse(cleanJsonText);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ 
@@ -374,67 +392,10 @@ const server = http.createServer((req, res) => {
       } catch (e) {
         console.error('Recognition error:', e);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, error: e.message }));
+        res.end(JSON.stringify({ success: false, error: '未能成功识别或解析图片，请检查网络或配置 API Key。详细错误见后台日志。' }));
       }
     });
     return;
-  }
-
-  // Helper function to extract product information from text
-  function extractProductInfo(text) {
-    const info = {
-      name: '',
-      price: '',
-      brand: '',
-      category: '',
-      source: ''
-    };
-
-    // Extract price
-    const priceMatch = text.match(/[¥￥]\s?(\d+(?:\.\d{2})?)/);
-    if (priceMatch) {
-      info.price = priceMatch[1];
-    }
-
-    // Extract brand (simple heuristic)
-    const brands = ['优衣库', 'UNIQLO', 'ZARA', 'H&M', '耐克', 'NIKE', '阿迪达斯', 'ADIDAS', '李宁', '安踏'];
-    for (const brand of brands) {
-      if (text.includes(brand)) {
-        info.brand = brand;
-        break;
-      }
-    }
-
-    // Extract category (simple heuristic)
-    const categories = ['T恤', '短袖', '长袖', '外套', '裤子', '牛仔裤', '裙子', '衬衫', '卫衣', '夹克'];
-    for (const category of categories) {
-      if (text.includes(category)) {
-        info.category = category;
-        break;
-      }
-    }
-
-    // Extract source (simple heuristic)
-    const sources = ['淘宝', '天猫', '京东', '拼多多', '苏宁', '唯品会'];
-    for (const source of sources) {
-      if (text.includes(source)) {
-        info.source = source;
-        break;
-      }
-    }
-
-    // Extract name (first few lines that don't contain price or other keywords)
-    const lines = text.split('\n').filter(line => line.trim());
-    const nameLines = [];
-    for (const line of lines) {
-      if (!line.includes('¥') && !line.includes('￥') && !line.includes('价格') && !line.includes('品牌') && !line.includes('分类')) {
-        nameLines.push(line.trim());
-        if (nameLines.length >= 2) break;
-      }
-    }
-    info.name = nameLines.join(' ');
-
-    return info;
   }
 
   // Static file serving
