@@ -67,9 +67,11 @@ const server = http.createServer((req, res) => {
   // 1. Auth Check for all other requests
   if (!isAuthorized(req)) {
     // Only allow essential assets for the login page
-    const publicAssets = ['/styles.css', '/src/styles.css', '/favicon.ico'];
-    if (req.method === 'GET' && (urlPath === '/index.html' || publicAssets.includes(urlPath))) {
-      // Allow index.html but the frontend will show the login overlay
+    const isStaticAsset = urlPath.endsWith('.js') || urlPath.endsWith('.css') || urlPath.endsWith('.ico') || 
+                          urlPath.endsWith('.png') || urlPath.endsWith('.jpg') || urlPath.endsWith('.jpeg');
+    
+    if (req.method === 'GET' && (urlPath === '/index.html' || isStaticAsset)) {
+      // Allow index.html and assets but the frontend will show the login overlay
     } else {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: 'Unauthorized' }));
