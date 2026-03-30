@@ -217,12 +217,12 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const data = JSON.parse(body);
-        const { image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location } = data;
+        const { image, name, category, brand, season, price, url, buy_date, source, add_date, color, location } = data;
         
         pool.query(
-          `INSERT INTO items (image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
-          [image, name, category, brand, season, status, price, url, buy_date, source, add_date, color, location || 'inventory'],
+          `INSERT INTO items (image, name, category, brand, season, price, url, buy_date, source, add_date, color, location)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+          [image, name, category, brand, season, price, url, buy_date, source, add_date, color, location || 'inventory'],
           (err, result) => {
             if (err) { res.writeHead(500); res.end(err.message); return; }
             res.writeHead(200, { 'Content-Type': 'application/json' });

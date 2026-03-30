@@ -1,5 +1,5 @@
 import { $, $$, escapeHtml } from '../utils.js';
-import { OPTIONS_SEASONS, OPTIONS_STATUSES } from '../config.js';
+import { OPTIONS_SEASONS } from '../config.js';
 
 export async function fetchData(url) {
   const res = await fetch(url);
@@ -61,7 +61,10 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
   }
   
   const allHeaders = Object.keys(filteredRows[0]);
-  
+
+  // Always hide internal/system fields from display
+  const hiddenFields = ['location'];
+
   // Initialize prefs if empty for these headers
   allHeaders.forEach(h => {
     if (columnPrefs[h] === undefined) {
@@ -70,7 +73,7 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
     }
   });
 
-  const displayHeaders = allHeaders.filter(h => columnPrefs[h]);
+  const displayHeaders = allHeaders.filter(h => columnPrefs[h] && !hiddenFields.includes(h.toLowerCase()));
   
   container.innerHTML = `
     <div class="controls">
@@ -105,7 +108,6 @@ export function renderCsvTable(container, title, fileType, rows, filterFn, showA
           </label>
         `).join('')}
       </div>
-    </div>
     </div>
     <div class="table-responsive">
       <table class="table">
@@ -164,11 +166,6 @@ function renderTableCell(value, header, fullRow) {
     return `<td data-label="${escapeHtml(header)}" style="font-weight:600; color:var(--accent)">${!isNaN(num) ? `¥${num.toFixed(0)}` : '¥0'}</td>`;
   }
   
-  if (headerLower.includes('状态') || headerLower.includes('status')) {
-    const statusClass = getStatusClass(value);
-    return `<td data-label="${escapeHtml(header)}"><span class="pill ${statusClass}">${escapeHtml(value)}</span></td>`;
-  }
-  
   if (headerLower.includes('季节') || headerLower.includes('适用季节') || headerLower.includes('season')) {
     const seasonClass = getSeasonClass(value);
     return `<td data-label="${escapeHtml(header)}"><span class="pill ${seasonClass}">${escapeHtml(value)}</span></td>`;
@@ -181,15 +178,6 @@ function renderTableCell(value, header, fullRow) {
   return `<td data-label="${escapeHtml(header)}">${escapeHtml(value)}</td>`;
 }
 
-function getStatusClass(status) {
-  if (!status) return '';
-  if (status.includes('正在使用')) return 'pill-active';
-  if (status.includes('收纳') || status.includes('换季')) return 'pill-storage';
-  if (status.includes('待处理') || status.includes('淘汰')) return 'pill-discarded';
-  if (status.includes('已下单')) return 'pill-ordered';
-  if (status.includes('预售') || status.includes('咸鱼')) return 'pill-pending';
-  return '';
-}
 
 function getSeasonClass(season) {
   if (!season) return '';
@@ -215,16 +203,18 @@ function renderRowActions(fileType) {
   };
 
   if (fileType === 'inventory') {
-    actions.push(`<button class="move-btn storage" data-action="move" data-target="storage" title="移至收纳">${icons.storage}</button>`);
-    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰">${icons.discard}</button>`);
+    actions.push(`<button class="move-btn storage" data-action="move" data-target="storage" title="移至闲置收纳">${icons.storage}</button>`);
+    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰区">${icons.discard}</button>`);
   } else if (fileType === 'storage') {
-    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="移回衣柜">${icons.inventory}</button>`);
-    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰">${icons.discard}</button>`);
+    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="移回在用衣柜">${icons.inventory}</button>`);
+    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="移至预淘汰区">${icons.discard}</button>`);
   } else if (fileType === 'discard') {
-    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="恢复到衣柜">${icons.restore}</button>`);
-    actions.push(`<button class="move-btn delete" data-action="delete" title="彻底删除">${icons.delete}</button>`);
-  } else if (fileType === 'purchases') {
-    actions.push(`<button class="move-btn delete" data-action="delete" title="彻底删除">${icons.delete}</button>`);
+    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="恢复到在用衣柜">${icons.restore}</button>`);
+    actions.push(`<button class="move-btn delete" data-action="delete" title="彻底删除记录">${icons.delete}</button>`);
+  } else if (fileType === 'purchases' || fileType === 'all') {
+    actions.push(`<button class="move-btn inventory" data-action="move" data-target="inventory" title="设为在用">${icons.inventory}</button>`);
+    actions.push(`<button class="move-btn storage" data-action="move" data-target="storage" title="设为收纳">${icons.storage}</button>`);
+    actions.push(`<button class="move-btn discard" data-action="move" data-target="discard" title="设为预淘汰">${icons.discard}</button>`);
   }
   
   actions.push(`<button class="edit-btn" data-action="edit" title="编辑属性">${icons.edit}</button>`);
@@ -284,7 +274,7 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
     
     if (action === 'edit') {
       const { showModal } = await import('./modal.js');
-      
+
       let editData = rowData;
       // If the row comes from the finance mapped view, translate it back to the English schema
       if (fileType === 'purchases') {
@@ -297,10 +287,10 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
            buy_date: rowData['购买日期'] || '',
            source: rowData['购买途径'] || '',
            price: rowData['价格'] || '',
-           status: rowData['状态'] || '',
            url: rowData['购买链接'] || '',
-           season: rowData['备注'] || '',
-           location: (rowData['当前下落'] === '正在使用' ? 'inventory' : (rowData['当前下落'] === '已收纳' ? 'storage' : (rowData['当前下落'] === '已淘汰' ? 'discard' : 'inventory')))
+           season: rowData['季节'] || '',
+           remarks: rowData['备注'] || '',
+           location: (rowData['当前下落'] === '在用衣橱' ? 'inventory' : (rowData['当前下落'] === '闲置收纳' ? 'storage' : (rowData['当前下落'] === '预淘汰区' ? 'discard' : 'inventory')))
          };
       }
       
@@ -323,14 +313,21 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
       });
     } else if (action === 'move') {
       const target = btn.dataset.target;
-      if (confirm(`确定要将该物品移动到 ${target} 吗？`)) {
+      const targetLabel = target === 'inventory' ? '在用衣柜' : (target === 'storage' ? '闲置收纳' : '预淘汰区');
+      
+      if (confirm(`确定要将该物品移动到 ${targetLabel} 吗？`)) {
         try {
           const res = await fetch(`/api/items/${rowData.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
+            // Zero duplicate entry: Synchronize status with location automatically
             body: JSON.stringify({ location: target })
           });
-          if (res.ok) alert('移动成功，请刷新页面即可！');
+          if (res.ok) {
+            window.dispatchEvent(new Event('data-refreshed'));
+          } else {
+            alert('移动失败，请重试');
+          }
         } catch(e) {
           alert('操作失败：' + e.message);
         }
@@ -358,8 +355,8 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
 
     const action = btn.dataset.batchAction;
     const selectedRows = $$('[data-row-select]:checked', container).map(cb => {
-      const rowIdx = cb.closest('tr').dataset.rowIdx;
-      return rows[rowIdx];
+      const rowId = cb.closest('tr').dataset.rowId;
+      return rows.find(r => String(r.id) === String(rowId));
     }).filter(row => row);
 
     if (selectedRows.length === 0) {
@@ -385,15 +382,17 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
           }
         }
         if (failCount === 0) {
-          alert(`批量删除成功 (${successCount} 项)，请刷新页面！`);
+          window.dispatchEvent(new Event('data-refreshed'));
         } else {
           alert(`删除完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+          window.dispatchEvent(new Event('data-refreshed'));
         }
       }
     } else if (action === 'move') {
       const targets = ['inventory', 'storage', 'discard'];
-      const targetLabels = { inventory: '正在使用', storage: '已收纳', discard: '已淘汰' };
+      const targetLabels = { inventory: '在用衣柜', storage: '闲置收纳', discard: '预淘汰区' };
       const target = prompt(`选择目标位置：\n${targets.map(t => `${t} - ${targetLabels[t]}`).join('\n')}`);
+      
       if (target && targets.includes(target)) {
         let successCount = 0;
         let failCount = 0;
@@ -402,6 +401,7 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
             const res = await fetch(`/api/items/${row.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
+              // Zero duplicate entry: Physical location update only, status removed
               body: JSON.stringify({ location: target })
             });
             if (res.ok) {
@@ -413,9 +413,8 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
             failCount++;
           }
         }
-        if (failCount === 0) {
-          alert(`批量移动到 ${targetLabels[target]} 成功 (${successCount} 项)，请刷新页面！`);
-        } else {
+        window.dispatchEvent(new Event('data-refreshed'));
+        if (failCount > 0) {
           alert(`移动完成：成功 ${successCount} 项，失败 ${failCount} 项`);
         }
       }

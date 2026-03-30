@@ -8,14 +8,14 @@ CREATE TABLE IF NOT EXISTS items (
   category TEXT,
   brand TEXT,
   season TEXT,
-  status TEXT,
   price REAL,
   url TEXT,
   buy_date TEXT,
   source TEXT,
   add_date TEXT,
   color TEXT,
-  location TEXT
+  location TEXT,
+  storage_location TEXT
 );
 
 CREATE TABLE IF NOT EXISTS purchases (
@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS purchases (
   source TEXT,
   price REAL,
   url TEXT,
-  status TEXT,
   remarks TEXT
 );
 `;

@@ -1,23 +1,35 @@
-# Agent / Developer Instructions
+# 智能助手 / 开发者指南
 
-Welcome to the **Digital Wardrobe (电子衣橱)** repository. 
-This project is driven by a deep commitment to exceptional user experience (UX) and product management principles. When modifying this codebase, your primary goal is to **think like a Product Manager**: prioritize user convenience, minimize friction, and automate tedious tasks.
+欢迎查阅 **数字衣橱（Digital Wardrobe）** 项目仓库。
+本项目秉持对卓越用户体验（UX）与产品管理原则的深刻承诺。在修改代码库时，你的首要目标是**像产品经理一样思考**：优先考虑用户便利性，减少操作阻力，并自动化繁琐任务。
 
-## 1. Core Philosophy: Frictionless UX & User-Centric Design (CRITICAL)
-- **Zero Duplicate Entry**: Users should never have to enter the same information twice. For example, adding a piece of clothing to the wardrobe must seamlessly reflect in their financial ledgers without a second action. 
-- **Automate the Tedious**: Leverage AI (Gemini Vision) and web scrapers (Puppeteer) to extract data (price, brand, category) so the user doesn't have to fill out long forms. "Pasting a screenshot" is always preferred over typing.
-- **Global Convenience**: Essential actions (like adding a new purchase) should be instantly accessible from anywhere in the app (e.g., sticky global top-nav buttons) rather than hidden deeply in context-specific menus.
-- **Immediate Visual Feedback**: When a user performs an action, the UI must react instantly without manual page reloads. Rely on global events (`data-refreshed`) to hot-reload connected views immediately.
+## 1. 核心理念：无摩擦用户体验与以用户为中心的设计（关键）
 
-## 2. Architecture: Single Source of Truth
-The technical architecture strictly serves the user-centric UX vision outlined above:
-- **Unified Items Table**: We use a "Single Source of Truth" database architecture to eliminate data silos. 
-- The `items` PostgreSQL table acts as the unified repository for **both** the physical Wardrobe properties (color, status, location) and Financial data (price, buy_date).
-- **DO NOT** use a separate `purchases` table. Instead, dynamically derive financial views (like the ledger or spending charts in `finance.js`) by filtering the `items` API.
+- **零重复录入**：用户绝不应重复输入相同信息。例如，将一件衣物添加到衣橱时，必须自动同步到财务账本，无需二次操作。
+- **自动化繁琐流程**：利用 AI（Gemini Vision）和网络爬虫（Puppeteer）提取数据（价格、品牌、分类），让用户无需填写冗长表单。"粘贴截图"始终优先于手动输入。
+- **全局便捷性**：核心操作（如添加新购买记录）应在应用的任何位置均可即时访问（例如，置顶的全局导航按钮），而非深藏于特定情境菜单中。
+- **即时视觉反馈**：用户执行操作时，界面必须即时响应，无需手动刷新页面。依赖全局事件（`data-refreshed`）立即热重载关联视图。
+- **专业产品命名**：UI 标签命名须严格遵循产品管理（PM）专业术语体系，禁止使用通用化、占位式或口语化名称。标签命名应精准、专业且具备品牌质感，与应用设计体系保持一致。
+  特别说明：开发过程中，用户或AI沟通中提及的名称仅为需求描述，不可直接作为最终命名，须基于专业术语体系进行标准化命名优化。
+- 产品经理视角：对于用户的要求，如果不是明确的bug修复指令，可以尝试给出更合理、更符合一般用户使用习惯的方案
 
-## 3. Tech Stack & Dependencies
-- **Backend AI**: Use `@google/genai` (Gemini 2.5 Flash) with strict JSON schema outputs (`application/json`) for robust visual data extraction.
-- **Frontend Simplicity**: Stick to strictly vanilla JavaScript (`ES modules`), HTML, and native CSS variables. **Do not introduce bloated frameworks (React/Vue/Tailwind)**. Simple faux-routers (`app.js`) are preferred to keep the bundle size zero and cold-starts lightning fast.
-- **Fail Gracefully**: Provide fallback UI for cases where scrapers or AI models fail. For instance, if the AI cannot find a price in an image, automatically degrade to a pre-filled manual form rather than abruptly erroring out.
+## 2. 架构设计：单一数据源
 
-When in doubt during development, ask yourself: *"Does this change make the user's life easier or harder?"*
+技术架构严格服务于上述以用户为中心的UX愿景：
+
+- **统一物品表**：我们采用"单一数据源"数据库架构，消除数据孤岛。
+- `items` PostgreSQL 表作为统一存储库，同时承载**物理衣橱属性**（颜色、状态、位置）和**财务数据**（价格、购买日期）。
+- **禁止**使用独立的 `purchases` 表。相反，通过筛选 `items` API 动态生成财务视图（如 `finance.js` 中的账本或支出图表）。
+
+## 3. 技术栈与依赖
+
+- **后端 AI**：使用 `@google/genai`（Gemini 2.5 Flash），采用严格的 JSON 模式输出（`application/json`），确保视觉数据提取的稳健性。
+- **前端简洁性**：严格使用原生 JavaScript（`ES 模块`）、HTML 和原生 CSS 变量。**禁止引入臃肿框架（React/Vue/Tailwind）**。推荐使用简单的伪路由（`app.js`），保持零打包体积和极速冷启动。
+- **优雅降级**：为爬虫或 AI 模型失败的情况提供降级 UI。例如，如果 AI 无法从图片中识别价格，自动降级到预填充的手动表单，而非直接报错。
+
+## 4. 代码维护与版本演进
+
+- **彻底清理旧版本残留**：当进行架构变更或字段替换时（如用 `location` 替代 `status`），应当彻底清理旧字段，而非在代码中保留兼容性处理。**优先使用数据库迁移脚本清理旧数据**，而不是在业务代码中做防御性编程。只有在真正需要向后兼容的情况下才保留过渡代码，且必须明确标注 TODO 和清理时间表。
+- **避免技术债积累**：冗余的兼容性代码会迅速积累成难以维护的技术债。每一次版本切换都是清理旧代码的机会，保持代码库的精简和清晰。
+
+开发过程中如有疑虑，请自问：*"这个改动是让用户的操作更轻松还是更困难？"*

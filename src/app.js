@@ -3,6 +3,7 @@ import { FILES, DEFAULT_BUDGETS } from './config.js';
 import { renderFinanceView } from './views/finance.js';
 import { renderWardrobeView } from './views/wardrobe.js';
 import { renderDashboardView } from './views/dashboard.js';
+import { renderSettingsView } from './views/settings.js';
 import { showModal, hideModal } from './components/modal.js';
 import { auth } from './auth.js';
 
@@ -18,6 +19,7 @@ const views = {
   dashboard: () => renderDashboardView(contentEl, loadingEl, navigate),
   finance: () => renderFinanceView(contentEl, loadingEl, navigate),
   wardrobe: () => renderWardrobeView(contentEl, loadingEl, navigate),
+  settings: () => renderSettingsView(contentEl, loadingEl, navigate),
 };
 
 window.navigate = navigate;

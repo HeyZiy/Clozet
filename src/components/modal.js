@@ -1,5 +1,5 @@
-import { $, $$, escapeHtml } from '../utils.js';
-import { OPTIONS_SEASONS, OPTIONS_STATUSES, OPTIONS_CATEGORIES, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
+import { $, $$, escapeHtml, getCategories } from '../utils.js';
+import { OPTIONS_SEASONS, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
 
 let currentEditData = null;
 let onSaveCallback = null;
@@ -62,17 +62,11 @@ function generateFormFields(data) {
       `;
     }
     
-    if (keyLower.includes('状态')) {
-      return `
-        <div class="form-group">
-          <label>${escapeHtml(key)}</label>
-          <select name="${escapeHtml(key)}">
-            ${OPTIONS_STATUSES.map(s => `<option value="${s}" ${s === value ? 'selected' : ''}>${s}</option>`).join('')}
-          </select>
-        </div>
-      `;
+    // Location field - hidden from user, managed automatically by system
+    if (keyLower === 'location') {
+      return `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`;
     }
-    
+
     if (keyLower.includes('季节') || keyLower.includes('适用季节')) {
       return `
         <div class="form-group">
@@ -112,9 +106,18 @@ function generateFormFields(data) {
       `;
     }
 
-    // 分类 - 可输入下拉框 (支持中文和英文字段名)
-    if (keyLower === 'category' || keyLower === '分类' || keyLower.includes('分类')) {
-      return generateCombobox(key, value, OPTIONS_CATEGORIES, '例如：短袖');
+    // 分类 - 下拉选择（使用用户自定义列表）
+    if (keyLower === 'category' || keyLower === '分类') {
+      const categories = getCategories();
+      return `
+        <div class="form-group">
+          <label>${escapeHtml(key)}</label>
+          <select name="${escapeHtml(key)}">
+            <option value="">请选择分类</option>
+            ${categories.map(c => `<option value="${c}" ${c === value ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+      `;
     }
 
     // 品牌 - 可输入下拉框 (支持中文和英文字段名)
@@ -125,6 +128,12 @@ function generateFormFields(data) {
     // 购买途径/来源 - 可输入下拉框 (支持中文和英文字段名)
     if (keyLower === 'source' || keyLower === '来源' || keyLower === '购买途径' || keyLower.includes('来源') || keyLower.includes('途径')) {
       return generateCombobox(key, value, OPTIONS_SOURCES, '例如：淘宝');
+    }
+
+    // 收纳位置 - 可输入下拉框
+    if (keyLower === 'storage_location' || keyLower === '收纳位置') {
+      const storageOptions = ['衣柜上层', '衣柜下层', '抽屉', '床底箱', '收纳箱A', '收纳箱B', '挂衣架', '玄关'];
+      return generateCombobox(key, value, storageOptions, '例如：衣柜上层');
     }
 
     return `

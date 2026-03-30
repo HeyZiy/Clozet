@@ -6,10 +6,12 @@ export const FILES = {
 };
 
 export const OPTIONS_SEASONS = ['春', '夏', '秋', '冬', '春秋', '秋冬', '四季通用'];
-export const OPTIONS_STATUSES = ['已下单', '正在使用', '已收纳', '已入库', '待处理', '已淘汰', '预售', '咸鱼在售', '已售出'];
 
-// 可输入下拉框选项 - 分类
-export const OPTIONS_CATEGORIES = ['短袖', '长袖', '外套', '裤子', '短裤', '羽绒服', '秋衣', '内衣', '袜子', '鞋子', '配饰', '特殊'];
+// 品类列表 - 默认列表，实际使用时会从 localStorage 读取用户自定义列表
+export const DEFAULT_CATEGORIES = ['短袖', '长袖', '外套', '裤子', '短裤', '羽绒服', '秋衣', '内衣', '袜子', '鞋子', '配饰', '特殊'];
+
+// 为了兼容性，OPTIONS_CATEGORIES 仍然导出，但组件应该使用 getCategories() 从 utils.js
+export const OPTIONS_CATEGORIES = DEFAULT_CATEGORIES;
 
 // 可输入下拉框选项 - 品牌
 export const OPTIONS_BRANDS = ['优衣库', 'UNIQLO', 'ZARA', 'H&M', '耐克', 'NIKE', '阿迪达斯', 'ADIDAS', '李宁', '安踏', '太平鸟', '森马', '美特斯邦威', '以纯'];

@@ -1,5 +1,5 @@
-import { $, $$, escapeHtml } from '../utils.js';
-import { OPTIONS_SEASONS, OPTIONS_STATUSES, OPTIONS_CATEGORIES, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
+import { $, $$, escapeHtml, getCategories } from '../utils.js';
+import { OPTIONS_SEASONS, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
 
 let onSaveCallback = null;
 let uploadedImageData = null;
@@ -40,10 +40,10 @@ function generatePurchaseForm() {
 
     <div class="form-group">
       <label>分类</label>
-      <input type="text" name="分类" placeholder="例如：短袖" list="purchase-categories-${uniqueId}" class="combobox-input" autocomplete="off">
-      <datalist id="purchase-categories-${uniqueId}">
-        ${OPTIONS_CATEGORIES.map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
-      </datalist>
+      <select name="分类" required>
+        <option value="">请选择分类</option>
+        ${getCategories().map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('')}
+      </select>
     </div>
 
     <div class="form-group">
@@ -58,13 +58,6 @@ function generatePurchaseForm() {
       <label>季节</label>
       <select name="季节">
         ${OPTIONS_SEASONS.map(s => `<option value="${s}">${s}</option>`).join('')}
-      </select>
-    </div>
-    
-    <div class="form-group">
-      <label>状态</label>
-      <select name="状态">
-        ${OPTIONS_STATUSES.map(s => `<option value="${s}" ${s === '已入库' ? 'selected' : ''}>${s}</option>`).join('')}
       </select>
     </div>
     
@@ -355,9 +348,11 @@ function handleSave() {
     source: data['购买途径'] || '',
     buy_date: data['购买日期'] || '',
     image: data['图片'] || '',
-    status: data['状态'] || '已入库',
+    location: 'inventory',
     url: data['购买链接'] || '',
-    remarks: data['季节'] || ''
+    season: data['季节'] || '',
+    remarks: '',
+    storage_location: ''
   };
   
   onSaveCallback(mappedData);
@@ -461,11 +456,12 @@ export function showImageImportModal(onSave) {
             category: data.category || '',
             source: data.source || '',
             season: data.season || '',
-            status: '已入库',
+            location: 'inventory',
             buy_date: today,
             image: base64Img,
             url: '',
-            remarks: data.season || ''
+            remarks: '',
+            storage_location: ''
           };
           
           if (onFastSaveCallback) {

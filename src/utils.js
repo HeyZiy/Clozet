@@ -52,3 +52,21 @@ export function getBudgets() {
 export function setBudgets(budgets) {
   localStorage.setItem('wardrobeBudgets', JSON.stringify(budgets));
 }
+
+// 品类配置管理
+const CATEGORIES_KEY = 'wardrobeCategories';
+const DEFAULT_CATEGORIES = ['短袖', '长袖', '外套', '裤子', '短裤', '羽绒服', '秋衣', '内衣', '袜子', '鞋子', '配饰', '特殊'];
+
+export function getCategories() {
+  const stored = localStorage.getItem(CATEGORIES_KEY);
+  return stored ? JSON.parse(stored) : DEFAULT_CATEGORIES;
+}
+
+export function setCategories(categories) {
+  localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+}
+
+export function resetCategories() {
+  localStorage.removeItem(CATEGORIES_KEY);
+  return DEFAULT_CATEGORIES;
+}

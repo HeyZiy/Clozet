@@ -1,42 +1,40 @@
 import { $, $$, escapeHtml } from '../utils.js';
 import { fetchData, normalize, renderCsvTable } from '../components/table.js';
 
-let currentTab = 'inventory';
+let currentTab = 'all'; // Default to Complete Catalog
 let activeCategory = '全部';
 
 export async function renderWardrobeView(contentEl, loadingEl, navigate) {
   loadingEl.hidden = false;
-  currentTab = 'inventory';
   
   try {
     const rawData = await fetchData('/api/items');
     const items = normalize(rawData).normalized;
     
-    // SQLite records have 'location' column: 'inventory', 'storage', 'discard'
+    // Categorize items by location
+    const all = items;
     const inv = items.filter(r => r.location === 'inventory');
     const store = items.filter(r => r.location === 'storage');
     const disc = items.filter(r => r.location === 'discard');
     
-    renderWardrobeLayout(contentEl, { inv, store, disc }, navigate);
+    renderWardrobeLayout(contentEl, { all, inv, store, disc }, navigate);
     setupWardrobeEvents(contentEl, navigate);
   } catch (e) {
-    contentEl.innerHTML = `<div class="muted">衣柜管理加载失败：${escapeHtml(e.message)}</div>`;
+    contentEl.innerHTML = `<div class="muted">资产目录加载失败：${escapeHtml(e.message)}</div>`;
   } finally {
     loadingEl.hidden = true;
   }
 }
 
-// Removed static CATEGORY_GROUPS and getCategoryGroup mapping
-// Categories will now be dynamically extracted from the data.
-
 function renderWardrobeLayout(contentEl, data, navigate) {
-  const { inv, store, disc } = data;
+  const { all, inv, store, disc } = data;
   
   contentEl.innerHTML = `
     <section class="wardrobe-view">
       <div class="view-tabs">
-        <button class="tab-btn ${currentTab === 'inventory' ? 'active' : ''}" data-tab="inventory">🧥 衣柜区域 (${inv.length})</button>
-        <button class="tab-btn ${currentTab === 'storage' ? 'active' : ''}" data-tab="storage">📦 收纳区域 (${store.length})</button>
+        <button class="tab-btn ${currentTab === 'all' ? 'active' : ''}" data-tab="all">📂 全量单品 (${all.length})</button>
+        <button class="tab-btn ${currentTab === 'inventory' ? 'active' : ''}" data-tab="inventory">🧥 在用衣柜 (${inv.length})</button>
+        <button class="tab-btn ${currentTab === 'storage' ? 'active' : ''}" data-tab="storage">📦 闲置收纳 (${store.length})</button>
         <button class="tab-btn ${currentTab === 'discard' ? 'active' : ''}" data-tab="discard">🗑️ 预淘汰区 (${disc.length})</button>
       </div>
       <div id="tab-content"></div>
@@ -47,18 +45,23 @@ function renderWardrobeLayout(contentEl, data, navigate) {
 }
 
 function renderTabContent(tabEl, data, navigate) {
-  const { inv, store, disc } = data;
+  const { all, inv, store, disc } = data;
   
   let currentData, title, fileType;
   switch (currentTab) {
+    case 'all':
+      currentData = all;
+      title = '全量单品';
+      fileType = 'all';
+      break;
     case 'inventory':
       currentData = inv;
-      title = '衣柜区域';
+      title = '在用衣柜';
       fileType = 'inventory';
       break;
     case 'storage':
       currentData = store;
-      title = '收纳区域';
+      title = '闲置收纳';
       fileType = 'storage';
       break;
     case 'discard':
@@ -89,7 +92,7 @@ function renderTabContent(tabEl, data, navigate) {
             </button>
           `).join('')}
           <button id="add-wardrobe-btn" style="background:var(--accent); color:#161a22; border:none; padding:4px 12px; border-radius:14px; cursor:pointer; font-size:12px; font-weight:bold; transition:all 0.2s; margin-left:8px;">
-            + 新增记录
+            + 新增单品
           </button>
         </div>
       </div>
@@ -129,28 +132,32 @@ function setupWardrobeEvents(contentEl, navigate) {
   if (addBtn) {
     addBtn.addEventListener('click', async () => {
       const { showModal } = await import('../components/modal.js');
+      
+      // Zero duplicate entry: default location based on tab
+      const defaultLoc = currentTab === 'all' ? 'inventory' : currentTab;
+      
       const emptyData = {
         name: '', category: '', brand: '', color: '', price: '',
-        buy_date: '', source: '', url: '', image: '',
-        season: '', status: '已入库', remarks: '',
-        location: currentTab // default to current tab
+        buy_date: new Date().toISOString().split('T')[0], source: '', url: '', image: '',
+        season: '', remarks: '',
+        location: defaultLoc,
+        storage_location: ''
       };
       
-      showModal('添加新物品', emptyData, async (newData) => {
+      showModal('录入新单品', emptyData, async (newData) => {
         try {
-          // 1. 先添加衣柜物品
           const res = await fetch('/api/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newData)
           });
           if (!res.ok) {
-            alert('添加失败，请重试');
+            alert('录入失败，请重试');
             return;
           }
-          // Removed synchronous creation in /api/purchases (Single Source of Truth)
-          alert('添加成功！');
-          refreshWardrobeData(contentEl, navigate);
+          // Zero Duplicate Entry: Views refresh via global event dispatch in app.js
+          // Actually we call dispatch here for legacy support or rely on app.js listeners
+          window.dispatchEvent(new Event('data-refreshed'));
         } catch(e) {
           alert('操作失败：' + e.message);
         }
@@ -163,10 +170,11 @@ async function refreshWardrobeData(contentEl, navigate) {
   const rawData = await fetchData('/api/items');
   const items = normalize(rawData).normalized;
   
+  const all = items;
   const inv = items.filter(r => r.location === 'inventory');
   const store = items.filter(r => r.location === 'storage');
   const disc = items.filter(r => r.location === 'discard');
   
-  renderTabContent($('#tab-content', contentEl), { inv, store, disc }, navigate);
+  renderTabContent($('#tab-content', contentEl), { all, inv, store, disc }, navigate);
   setupWardrobeEvents(contentEl, navigate);
 }

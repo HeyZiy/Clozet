@@ -34,7 +34,6 @@ async function fetchFinanceData() {
       购买途径: row.source || '',
       价格: row.price || 0,
       当前下落: (row.location === 'inventory' ? '正在使用' : row.location === 'storage' ? '已收纳' : row.location === 'discard' ? '已淘汰' : row.location || '未知'),
-      状态: row.status || '',
       购买链接: row.url || '',
       备注: row.season || ''
     }));
@@ -208,8 +207,9 @@ function renderHistoryTab(tabEl, purch, navigate) {
       const emptyData = {
         name: '', category: '', brand: '', color: '', price: '',
         buy_date: '', source: '', url: '', image: '',
-        season: '', status: '已入库', remarks: '',
-        location: 'inventory'
+        season: '', remarks: '',
+        location: 'inventory',
+        storage_location: ''
       };
       
       showModal('通过财务单据添加物品', emptyData, async (newData) => {
@@ -365,8 +365,7 @@ function setupFinanceEvents(contentEl, navigate) {
   if (yearSelector) {
     yearSelector.addEventListener('change', async (e) => {
       setStoredYear(parseInt(e.target.value));
-      const rawData = await fetchData('/api/purchases');
-      const purch = normalize(rawData).normalized;
+      const purch = await fetchFinanceData();
       renderTabContent($('#tab-content', contentEl), purch, navigate);
       setupFinanceEvents(contentEl, navigate);
     });
@@ -379,8 +378,7 @@ function setupFinanceEvents(contentEl, navigate) {
       $$('.tab-btn', contentEl).forEach(b => b.classList.remove('active'));
       $$('[data-tab="history"]', contentEl).forEach(b => b.classList.add('active'));
       
-      const rawData = await fetchData('/api/purchases');
-      const purch = normalize(rawData).normalized;
+      const purch = await fetchFinanceData();
       renderTabContent($('#tab-content', contentEl), purch, navigate);
       setupFinanceEvents(contentEl, navigate);
     });
