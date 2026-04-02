@@ -1,5 +1,6 @@
-import { $, $$, escapeHtml } from '../utils.js';
+import { $, $$, escapeHtml, getStorageLocations } from '../utils.js';
 import { OPTIONS_SEASONS } from '../config.js';
+import { showToast } from './toast.js';
 
 export async function fetchData(url) {
   const res = await fetch(url);
@@ -314,36 +315,98 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
     } else if (action === 'move') {
       const target = btn.dataset.target;
       const targetLabel = target === 'inventory' ? '在用衣柜' : (target === 'storage' ? '闲置收纳' : '预淘汰区');
-      
-      if (confirm(`确定要将该物品移动到 ${targetLabel} 吗？`)) {
-        try {
-          const res = await fetch(`/api/items/${rowData.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            // Zero duplicate entry: Synchronize status with location automatically
-            body: JSON.stringify({ location: target })
-          });
-          if (res.ok) {
-            window.dispatchEvent(new Event('data-refreshed'));
-          } else {
-            alert('移动失败，请重试');
-          }
-        } catch(e) {
-          alert('操作失败：' + e.message);
+
+      // 如果是移到收纳区，先弹出选择收纳位置的弹窗
+      let storageLocation = '';
+      if (target === 'storage') {
+        const locations = getStorageLocations();
+        const locationOptions = locations.map((loc, idx) => `${idx + 1}. ${loc}`).join('\n');
+        const selected = prompt(`选择收纳位置：\n${locationOptions}\n\n输入序号（1-${locations.length}）或直接输入位置名称：`);
+
+        if (selected === null) return; // 用户取消
+
+        // 输入验证
+        if (!selected.trim()) {
+          showToast('请输入有效的收纳位置', { type: 'error' });
+          return;
+        }
+
+        // 尝试解析序号
+        const idx = parseInt(selected) - 1;
+        if (idx >= 0 && idx < locations.length) {
+          storageLocation = locations[idx];
+        } else {
+          // 直接使用输入的内容
+          storageLocation = selected.trim();
         }
       }
-    } else if (action === 'delete') {
-      if (confirm('确定要删除这项吗？')) {
-        const endpoint = `/api/items/${rowData.id}`;
-        try {
-          const res = await fetch(endpoint, { method: 'DELETE' });
-          if (res.ok) {
-            alert('删除成功！');
-            window.dispatchEvent(new Event('data-refreshed'));
-          }
-        } catch(e) {
-          alert('删除失败：' + e.message);
+
+      // 执行移动
+      try {
+        const updateData = { location: target };
+        if (storageLocation) {
+          updateData.storage_location = storageLocation;
         }
+
+        const res = await fetch(`/api/items/${rowData.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateData)
+        });
+
+        if (res.ok) {
+          // 显示 Toast 通知，支持撤销
+          const message = storageLocation
+            ? `已移动到 ${targetLabel} - ${storageLocation}`
+            : `已移动到 ${targetLabel}`;
+
+          showToast(message, {
+            type: 'success',
+            undoable: true,
+            undoText: '撤销',
+            duration: 5000,
+            onUndo: async () => {
+              // 撤销移动，恢复原位置
+              try {
+                const undoData = { location: rowData.location };
+                if (rowData.storage_location) {
+                  undoData.storage_location = rowData.storage_location;
+                }
+                await fetch(`/api/items/${rowData.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(undoData)
+                });
+                window.dispatchEvent(new Event('data-refreshed'));
+              } catch(e) {
+                console.error('撤销失败:', e);
+              }
+            }
+          });
+          window.dispatchEvent(new Event('data-refreshed'));
+        } else {
+          showToast('移动失败，请重试', { type: 'error' });
+        }
+      } catch(e) {
+        showToast('操作失败：' + e.message, { type: 'error' });
+      }
+    } else if (action === 'delete') {
+      // 先执行删除
+      const endpoint = `/api/items/${rowData.id}`;
+      try {
+        const res = await fetch(endpoint, { method: 'DELETE' });
+        if (res.ok) {
+          // 显示 Toast 通知，支持撤销（这里只是视觉反馈，实际撤销需要后端支持恢复）
+          showToast('已删除', {
+            type: 'success',
+            duration: 3000
+          });
+          window.dispatchEvent(new Event('data-refreshed'));
+        } else {
+          showToast('删除失败，请重试', { type: 'error' });
+        }
+      } catch(e) {
+        showToast('删除失败：' + e.message, { type: 'error' });
       }
     }
   });
@@ -365,43 +428,46 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
     }
 
     if (action === 'delete') {
-      if (confirm(`确定要删除选中的 ${selectedRows.length} 项吗？`)) {
-        let successCount = 0;
-        let failCount = 0;
-        for (const row of selectedRows) {
-          try {
-            const endpoint = `/api/items/${row.id}`;
-            const res = await fetch(endpoint, { method: 'DELETE' });
-            if (res.ok) {
-              successCount++;
-            } else {
-              failCount++;
-            }
-          } catch(e) {
+      // 批量删除
+      let successCount = 0;
+      let failCount = 0;
+      for (const row of selectedRows) {
+        try {
+          const endpoint = `/api/items/${row.id}`;
+          const res = await fetch(endpoint, { method: 'DELETE' });
+          if (res.ok) {
+            successCount++;
+          } else {
             failCount++;
           }
+        } catch(e) {
+          failCount++;
         }
-        if (failCount === 0) {
-          window.dispatchEvent(new Event('data-refreshed'));
-        } else {
-          alert(`删除完成：成功 ${successCount} 项，失败 ${failCount} 项`);
-          window.dispatchEvent(new Event('data-refreshed'));
-        }
+      }
+
+      if (failCount === 0) {
+        showToast(`已删除 ${successCount} 项`, { type: 'success', duration: 3000 });
+        window.dispatchEvent(new Event('data-refreshed'));
+      } else {
+        showToast(`删除完成：成功 ${successCount} 项，失败 ${failCount} 项`, { type: 'warning', duration: 5000 });
+        window.dispatchEvent(new Event('data-refreshed'));
       }
     } else if (action === 'move') {
       const targets = ['inventory', 'storage', 'discard'];
       const targetLabels = { inventory: '在用衣柜', storage: '闲置收纳', discard: '预淘汰区' };
       const target = prompt(`选择目标位置：\n${targets.map(t => `${t} - ${targetLabels[t]}`).join('\n')}`);
-      
+
       if (target && targets.includes(target)) {
+        // 保存原始位置用于撤销
+        const originalLocations = new Map(selectedRows.map(r => [r.id, r.location]));
         let successCount = 0;
         let failCount = 0;
+
         for (const row of selectedRows) {
           try {
             const res = await fetch(`/api/items/${row.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              // Zero duplicate entry: Physical location update only, status removed
               body: JSON.stringify({ location: target })
             });
             if (res.ok) {
@@ -413,9 +479,36 @@ export function setupTableEvents(container, fileType, rows, title, filterFn, sho
             failCount++;
           }
         }
-        window.dispatchEvent(new Event('data-refreshed'));
-        if (failCount > 0) {
-          alert(`移动完成：成功 ${successCount} 项，失败 ${failCount} 项`);
+
+        if (failCount === 0) {
+          showToast(`已移动 ${successCount} 项到 ${targetLabels[target]}`, {
+            type: 'success',
+            undoable: true,
+            undoText: '撤销',
+            duration: 5000,
+            onUndo: async () => {
+              // 批量撤销
+              for (const row of selectedRows) {
+                const originalLoc = originalLocations.get(row.id);
+                if (originalLoc) {
+                  try {
+                    await fetch(`/api/items/${row.id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ location: originalLoc })
+                    });
+                  } catch(e) {
+                    console.error('撤销失败:', e);
+                  }
+                }
+              }
+              window.dispatchEvent(new Event('data-refreshed'));
+            }
+          });
+          window.dispatchEvent(new Event('data-refreshed'));
+        } else {
+          showToast(`移动完成：成功 ${successCount} 项，失败 ${failCount} 项`, { type: 'warning', duration: 5000 });
+          window.dispatchEvent(new Event('data-refreshed'));
         }
       }
     }

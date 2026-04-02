@@ -70,3 +70,21 @@ export function resetCategories() {
   localStorage.removeItem(CATEGORIES_KEY);
   return DEFAULT_CATEGORIES;
 }
+
+// 收纳位置配置管理
+const STORAGE_LOCATIONS_KEY = 'wardrobeStorageLocations';
+const DEFAULT_STORAGE_LOCATIONS = ['衣柜上层', '衣柜下层', '抽屉', '床底箱', '收纳箱A', '收纳箱B', '挂衣架', '玄关'];
+
+export function getStorageLocations() {
+  const stored = localStorage.getItem(STORAGE_LOCATIONS_KEY);
+  return stored ? JSON.parse(stored) : DEFAULT_STORAGE_LOCATIONS;
+}
+
+export function setStorageLocations(locations) {
+  localStorage.setItem(STORAGE_LOCATIONS_KEY, JSON.stringify(locations));
+}
+
+export function resetStorageLocations() {
+  localStorage.removeItem(STORAGE_LOCATIONS_KEY);
+  return DEFAULT_STORAGE_LOCATIONS;
+}

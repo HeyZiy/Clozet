@@ -1,4 +1,4 @@
-import { $, $$, escapeHtml, getCategories } from '../utils.js';
+import { $, $$, escapeHtml, getCategories, getStorageLocations } from '../utils.js';
 import { OPTIONS_SEASONS, OPTIONS_BRANDS, OPTIONS_SOURCES } from '../config.js';
 
 let currentEditData = null;
@@ -130,9 +130,9 @@ function generateFormFields(data) {
       return generateCombobox(key, value, OPTIONS_SOURCES, '例如：淘宝');
     }
 
-    // 收纳位置 - 可输入下拉框
+    // 收纳位置 - 可输入下拉框（使用用户自定义列表）
     if (keyLower === 'storage_location' || keyLower === '收纳位置') {
-      const storageOptions = ['衣柜上层', '衣柜下层', '抽屉', '床底箱', '收纳箱A', '收纳箱B', '挂衣架', '玄关'];
+      const storageOptions = getStorageLocations();
       return generateCombobox(key, value, storageOptions, '例如：衣柜上层');
     }
 

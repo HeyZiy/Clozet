@@ -1,4 +1,4 @@
-import { $, $$, escapeHtml, getCategories, setCategories, resetCategories, getBudgets, setBudgets } from '../utils.js';
+import { $, $$, escapeHtml, getCategories, setCategories, resetCategories, getBudgets, setBudgets, getStorageLocations, setStorageLocations, resetStorageLocations } from '../utils.js';
 import { DEFAULT_CATEGORIES, DEFAULT_BUDGETS } from '../config.js';
 
 export function renderSettingsView(contentEl, loadingEl, navigate) {
@@ -6,6 +6,7 @@ export function renderSettingsView(contentEl, loadingEl, navigate) {
 
   try {
     const categories = getCategories();
+    const storageLocations = getStorageLocations();
     const budgets = getBudgets();
 
     contentEl.innerHTML = `
@@ -32,6 +33,29 @@ export function renderSettingsView(contentEl, loadingEl, navigate) {
           <div style="display:flex; gap:8px;">
             <input type="text" id="new-category" placeholder="输入新分类名称" style="flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px 14px; border-radius:8px;">
             <button id="add-category" style="background:var(--brand); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">添加</button>
+          </div>
+        </div>
+
+        <!-- 收纳位置管理 -->
+        <div class="settings-card" style="background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px; margin-bottom:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h3 style="margin:0; font-size:16px;">📦 收纳位置管理</h3>
+            <button id="reset-storage-locations" style="background:none; border:1px solid var(--border); color:var(--muted); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px;">恢复默认</button>
+          </div>
+          <p style="color:var(--muted); font-size:13px; margin-bottom:16px;">自定义收纳位置列表，用于移动衣物到收纳区时的选择</p>
+
+          <div id="storage-locations-list" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;">
+            ${storageLocations.map(loc => `
+              <div class="location-tag" style="display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.15); color:var(--success); padding:8px 12px; border-radius:20px; font-size:13px;">
+                <span>${escapeHtml(loc)}</span>
+                <button class="remove-loc" data-loc="${escapeHtml(loc)}" style="background:none; border:none; color:var(--success); cursor:pointer; padding:0; font-size:16px; line-height:1;">×</button>
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="new-storage-location" placeholder="输入新收纳位置" style="flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px 14px; border-radius:8px;">
+            <button id="add-storage-location" style="background:var(--success); color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">添加</button>
           </div>
         </div>
 
@@ -118,6 +142,49 @@ function setupSettingsEvents(contentEl) {
     refreshCategoriesList(contentEl);
   });
 
+  // 添加收纳位置
+  const addLocBtn = $('#add-storage-location', contentEl);
+  const newLocInput = $('#new-storage-location', contentEl);
+
+  addLocBtn?.addEventListener('click', () => {
+    const newLoc = newLocInput.value.trim();
+    if (!newLoc) return;
+
+    const locations = getStorageLocations();
+    if (locations.includes(newLoc)) {
+      alert('该收纳位置已存在');
+      return;
+    }
+
+    locations.push(newLoc);
+    setStorageLocations(locations);
+    newLocInput.value = '';
+    refreshStorageLocationsList(contentEl);
+  });
+
+  newLocInput?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') addLocBtn?.click();
+  });
+
+  // 删除收纳位置
+  contentEl.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-loc')) {
+      const locToRemove = e.target.dataset.loc;
+      if (!confirm(`确定要删除收纳位置 "${locToRemove}" 吗？`)) return;
+
+      const locations = getStorageLocations().filter(l => l !== locToRemove);
+      setStorageLocations(locations);
+      refreshStorageLocationsList(contentEl);
+    }
+  });
+
+  // 恢复默认收纳位置
+  $('#reset-storage-locations', contentEl)?.addEventListener('click', () => {
+    if (!confirm('确定要恢复默认收纳位置列表吗？自定义的位置将被删除。')) return;
+    resetStorageLocations();
+    refreshStorageLocationsList(contentEl);
+  });
+
   // 保存预算
   $('#save-budgets', contentEl)?.addEventListener('click', () => {
     const yearly = parseFloat($('#yearly-budget', contentEl).value) || DEFAULT_BUDGETS.yearly;
@@ -160,6 +227,19 @@ function refreshCategoriesList(contentEl) {
       <div class="category-tag" style="display:flex; align-items:center; gap:6px; background:rgba(99,102,241,0.15); color:var(--brand); padding:8px 12px; border-radius:20px; font-size:13px;">
         <span>${escapeHtml(cat)}</span>
         <button class="remove-cat" data-cat="${escapeHtml(cat)}" style="background:none; border:none; color:var(--brand); cursor:pointer; padding:0; font-size:16px; line-height:1;">×</button>
+      </div>
+    `).join('');
+  }
+}
+
+function refreshStorageLocationsList(contentEl) {
+  const locations = getStorageLocations();
+  const listEl = $('#storage-locations-list', contentEl);
+  if (listEl) {
+    listEl.innerHTML = locations.map(loc => `
+      <div class="location-tag" style="display:flex; align-items:center; gap:6px; background:rgba(16,185,129,0.15); color:var(--success); padding:8px 12px; border-radius:20px; font-size:13px;">
+        <span>${escapeHtml(loc)}</span>
+        <button class="remove-loc" data-loc="${escapeHtml(loc)}" style="background:none; border:none; color:var(--success); cursor:pointer; padding:0; font-size:16px; line-height:1;">×</button>
       </div>
     `).join('');
   }
